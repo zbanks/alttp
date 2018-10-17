@@ -4,10 +4,19 @@
 
 //                                   Matches ledge direction
 //                                   0   U   D   L   R  LU  LD  RU  RD  0
+#define DIR_LIST   X(U)   X(D)   X(L)   X(R)   X(LU)   X(LD)   X(RU)   X(RD)
+enum { DIR_NONE, DIR_U, DIR_D, DIR_L, DIR_R, DIR_LU, DIR_LD, DIR_RU, DIR_RD };
 static const int8_t dir_dx[10]    = {0,  0,  0, -1, +1, -1, -1, +1, +1, 0};
 static const int8_t dir_dy[10]    = {0, -1, +1,  0,  0, -1, +1, -1, +1, 0};
 static const uint8_t dir_cost[10] = {0, 32, 32, 32, 32, 48, 48, 48, 48, 0}; // cost to move 4x4 blocks
-enum { DIR_NONE, DIR_U, DIR_D, DIR_L, DIR_R, DIR_LU, DIR_LD, DIR_RU, DIR_RD };
+
+static const struct xy dir_dxy[10] = {
+    [DIR_U] = XY(0, -1), [DIR_D] = XY(0, +1),
+    [DIR_L] = XY(-1, 0), [DIR_R] = XY(+1, 0),
+    [DIR_LU] = XY(-1, -1), [DIR_LD] = XY(-1, +1),
+    [DIR_RU] = XY(+1, -1), [DIR_RD] = XY(+1, +1),
+};
+
 
 struct ap_node {
     struct ap_node * node_parent;

@@ -109,6 +109,7 @@ static const uint16_t ap_tile_attrs[256] = {
 
     [0x22] = TILE_ATTR_WALK,
 
+    [0x27] = 0,              // fence
     [0x28] = TILE_ATTR_LDGE, // up
     [0x29] = TILE_ATTR_LDGE, // down
     [0x2a] = TILE_ATTR_LDGE, // left

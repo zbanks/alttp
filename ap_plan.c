@@ -25,6 +25,7 @@ static bool ap_new_goals = true;
 void
 ap_print_goals()
 {
+    return;
     printf("Goal list:\n");
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
         printf("    * " PRIGOAL "\n", PRIGOALF(goal));
@@ -70,6 +71,7 @@ ap_task_append()
 void
 ap_print_tasks()
 {
+    return;
     if (ap_active_goal == NULL) {
         printf("Current Goal: " PRIGOAL "\n", PRIGOALF(ap_active_goal));
     }
@@ -96,7 +98,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->state++;
         case 1:
         case 2:
-            if (task->state == 2) {
+            if (task->state == 2 || (*ap_ram.touching_chest & 0xF)) {
                 JOYPAD_CLEAR(A);
                 task->state = 1;
             } else if (*ap_ram.push_dir_bitmask & 0xF) {
@@ -112,22 +114,18 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     case TASK_CHEST:
         switch (task->state) {
         case 0:
-            rc = ap_pathfind_node(task->node);
-            if (rc < 0) return RC_FAIL;
-            task->timeout = rc + 32;
+            task->timeout = 64;
             task->state++;
         case 1:
-            rc = ap_follow_targets(joypad);
-            if (rc == RC_DONE) task->state++;
-            else return rc;
-        case 2:
             JOYPAD_SET(UP);
-            if (*ap_ram.touching_chest & 0xF) task->state++;
+            if (*ap_ram.touching_chest & 0xF) {
+                task->state++;
+            }
+        case 2:
         case 3:
-        case 4:
-            if (task->state == 3) { JOYPAD_SET(A); task->state = 4; }
-            else { JOYPAD_CLEAR(A); task->state = 3; }
-            LOG("item_recv_method: %x", *ap_ram.item_recv_method);
+            if (task->state == 2) { JOYPAD_SET(A); task->state = 3; }
+            else { JOYPAD_CLEAR(A); task->state = 2; }
+            //LOG("item_recv_method: %x", *ap_ram.item_recv_method);
             if (*ap_ram.item_recv_method == 1) return RC_DONE;
         }
         break;
@@ -146,6 +144,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_TRANSITION:
+        LOG("transition: state=%d, timeout=%d", task->state, task->timeout);
         switch (task->state) {
         case 0:
             task->timeout = 128;

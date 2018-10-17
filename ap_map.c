@@ -237,6 +237,8 @@ ap_set_targets(size_t count)
     for (size_t i = 0; i < count; i++) {
         ap_target_timeout += XYL1DIST(ap_targets[i], ap_targets[i+1]) * 2;
     }
+
+    ap_target_timeout += 64;
     return ap_target_timeout;
 }
 
@@ -246,6 +248,7 @@ ap_follow_targets(uint16_t * joypad)
     struct xy link = ap_link_xy();
     if (ap_target_timeout <= 0) {
         INFO("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0]));
+        LOG("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0]));
         ap_target_count = 0;
         return RC_FAIL;
     }
@@ -254,17 +257,19 @@ ap_follow_targets(uint16_t * joypad)
     while (true) {
         if (ap_target_count < 1) {
             INFO("L:" PRIXY "; done", PRIXYF(link));
+            LOG("L:" PRIXY "; done", PRIXYF(link));
             return RC_DONE;
         }
 
         target = ap_targets[ap_target_count-1];
-        if (XYL1DIST(target, link) != 0)
+        if (XYL1DIST(target, link) > 0)
             break;
 
         ap_target_count--;
     }
 
     INFO("L:" PRIXY "; %zu:" PRIXY "; %d", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout);
+    LOG("L:" PRIXY "; %zu:" PRIXY "; %d", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout);
 
     if (link.x > target.x)
         JOYPAD_SET(LEFT);
@@ -394,6 +399,8 @@ ap_pathfind_local(struct xy destination_tl, struct xy destination_br, bool commi
                 state[y][x].ledge = (tile & 0x7) + 1;
             } else if (tile & TILE_ATTR_LFT0) {
                 cost = 5000;
+            } else if (XYIN(mapxy, dst_tl, dst_br)) {
+                cost = 0;
             } else {
                 cost = (1 << 20);
             }
@@ -456,13 +463,6 @@ ap_pathfind_local(struct xy destination_tl, struct xy destination_br, bool commi
                 }
             }
 
-            uint32_t heuristic = ap_path_heuristic(neighbor, dst_tl, dst_br);
-            if (heuristic == 0) {
-                final_xy = neighbor;
-                state[neighbor.y][neighbor.x].from = &state[node.y][node.x];
-                goto search_done;
-            }
-
             uint32_t gscore = state[node.y][node.x].gscore;
             gscore += dir_cost[i];
             if (!state[neighbor.y][neighbor.x].ledge)
@@ -471,6 +471,13 @@ ap_pathfind_local(struct xy destination_tl, struct xy destination_br, bool commi
                 continue;
             if (gscore >= state[neighbor.y][neighbor.x].gscore)
                 continue;
+
+            uint32_t heuristic = ap_path_heuristic(neighbor, dst_tl, dst_br);
+            if (heuristic == 0) {
+                final_xy = neighbor;
+                state[neighbor.y][neighbor.x].from = &state[node.y][node.x];
+                goto search_done;
+            }
 
             min_heuristic = MIN(heuristic, min_heuristic);
             uint32_t fscore = gscore + heuristic;
@@ -521,6 +528,11 @@ ap_pathfind_node(struct ap_node * node)
 {
     struct xy tl = node->tl;
     struct xy br = node->br;
+    if (node->adjacent_direction) {
+        struct xy offset = XYOP1(dir_dxy[node->adjacent_direction], * -7);
+        tl = XYOP2(tl, +, offset);
+        br = XYOP2(br, +, offset);
+    }
     return ap_pathfind_local(tl, br, true);
 }
 
@@ -643,7 +655,7 @@ ap_update_map_node()
             new_node = NULL;
         }
     }
-    if (!*ap_ram.in_building) {
+    if (!*ap_ram.in_building && false) {
         LOG("xo: %04x, xm: %04x, yo: %04x, ym: %04x",
             *ap_ram.map_x_offset, *ap_ram.map_x_mask, *ap_ram.map_y_offset, *ap_ram.map_y_mask);
         for (size_t i = 0; i < 0x81; i++) {

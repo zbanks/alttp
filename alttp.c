@@ -37,6 +37,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     ap_debug = JOYPAD_TEST(START);
 
     ap_update_map_node();
+    //LOG("touching_chest: %d", *ap_ram.touching_chest);
     ap_plan_evaluate(joypad);
     //ap_print_map();
 
