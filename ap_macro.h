@@ -20,7 +20,8 @@
 #define TERM_MAGENTA(x) "\x1b[35m" x "\x1b[0m"
 #define TERM_CYAN(x)    "\x1b[36m" x "\x1b[0m"
 
-#define DEBUG(fmt, ...) ({ if(ap_debug){printf(fmt "\n", ## __VA_ARGS__);} })
+#define LOG(fmt, ...) printf("["__FILE__ ":%d] " fmt "\n", __LINE__, ## __VA_ARGS__)
+#define DEBUG(...) ({ if(ap_debug){LOG(__VA_ARGS__);} })
 #define INFO_STRING_SIZE 256
 #define INFO(...) snprintf(ap_info_string, INFO_STRING_SIZE, __VA_ARGS__)
 #define INFO_HEXDUMP(ptr) INFO_HEXDUMP2(((uint8_t *)ptr))
@@ -29,3 +30,32 @@
 extern char ap_info_string[];
 extern bool ap_debug;
 
+#define LL_INIT(list) ({ \
+    (list)->prev = (list); \
+    (list)->next = (list); })
+
+#define LL_PUSH(list, node) ({ \
+    (node)->prev = (list)->prev; \
+    (node)->prev->next = (node); \
+    (node)->next = (list); \
+    (node)->next->prev = (node); })
+
+#define LL_POP(list) ({ \
+    __auto_type n = (list)->next; \
+    (list)->next = (list)->next->next; \
+    (list)->next->prev = (list); \
+    (n == (list)) ? NULL : n; })
+
+#define LL_EXTRACT(list, node) ({ \
+    (node)->prev->next = (node)->next; \
+    (node)->next->prev = (node)->prev; \
+    })
+
+#define LL_PEEK(list) ({ \
+    (list)->next == (list) ? NULL : (list)->next; })
+
+enum rc {
+    RC_FAIL = -1,
+    RC_DONE = 0,
+    RC_INPR = 1,
+};

@@ -4,6 +4,7 @@ C_SRC = \
 	alttp.c \
 	ap_map.c \
 	ap_snes.c \
+	ap_plan.c \
 	pq.c \
 
 OBJECTS = $(C_SRC:%.c=build/%.o)

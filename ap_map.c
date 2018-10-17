@@ -2,6 +2,7 @@
 #include "ap_math.h"
 #include "ap_macro.h"
 #include "ap_snes.h"
+#include "ap_plan.h"
 #include "pq.h"
 
 static struct ap_node map_nodes[0x100 * 0x100];
@@ -9,6 +10,7 @@ static size_t last_map_node_idx = -1;
 
 static struct xy ap_targets[2048];
 static size_t ap_target_count = 0;
+static int ap_target_timeout = 0;
 
 static struct ap_node *
 ap_node_append(struct ap_node * parent)
@@ -17,19 +19,18 @@ ap_node_append(struct ap_node * parent)
     assert(child != NULL);
 
     child->node_parent = parent;
-    child->node_prev = parent->node_prev;
-    child->node_prev->node_next = child;
-    child->node_next = parent;
-    child->node_next->node_prev = child;
+    LL_PUSH(parent, child);
     return child;
 }
 
 struct xy
 ap_link_xy()
 {
+    // Returns the effective tl coordinate that link interacts with
+    // Which is 8 pixels below his head
     return (struct xy) {
         .x = *ap_ram.link_x,
-        .y = (uint16_t) (*ap_ram.link_y + 0),
+        .y = (uint16_t) (*ap_ram.link_y + 8),
     };
 }
 
@@ -38,6 +39,7 @@ ap_map_bounds(struct xy * topleft, struct xy * bottomright)
 {
     if (*ap_ram.in_building) {
         struct xy link = ap_link_xy();
+        link.y = CAST16(link.y - 8);
         topleft->x = (uint16_t) (link.x & ~511);
         topleft->y = (uint16_t) (link.y & ~511);
         bottomright->x = (uint16_t) (topleft->x | 511);
@@ -164,42 +166,96 @@ static struct xy
 ap_map16_to_xy(struct xy tl, uint16_t map16)
 {
     struct xy xy;
-    xy.x = tl.x | ((map16 & 0x03F) << 4);
-    xy.y = tl.y | ((map16 & 0xFC0) >> 3);
+    //xy.x = tl.x + ((map16 & 0x03F) << 4);
+    //xy.y = tl.y + ((map16 & 0xFC0) >> 2);
+    xy.x = (*ap_ram.map_x_offset * 8) + ((map16 & 0x07E) << 3) + 8;
+    xy.y = *ap_ram.map_y_offset + ((map16 & 0x1F80) >> 3) + 16;
     return xy;
 }
+
+static struct ap_node *
+ap_map_node(struct xy tl);
 
 void
 ap_print_map()
 {
+    FILE * mapf = fopen("map", "w");
     struct xy xy, topleft, bottomright;
     ap_map_bounds(&topleft, &bottomright);
     struct xy link = ap_link_xy();
+    //struct xy link_tl = XY(link.x, link.y + 8);
+    //struct xy link_br = XY(link.x + 15, link.y + 23);
+    struct xy link_tl = link;
+    struct xy link_br = XYOP1(link, + 15);
+    struct ap_node * map_node = ap_map_node(topleft);
+
     for (xy.y = topleft.y; xy.y < bottomright.y; xy.y += 8) {
         for (xy.x = topleft.x; xy.x < bottomright.x; xy.x += 8) {
-            if (xy.x >= link.x &&
-                xy.x < link.x + 16 &&
-                xy.y >= link.y + 8 &&
-                xy.y < link.y + 24) {
-                printf(TERM_BOLD("%02x "), ap_map_attr(xy));
-            } else {
-                printf("%02x ", ap_map_attr(xy));
+            uint8_t tile_attr = ap_map_attr(xy);
+            if (XYIN(xy, link_tl, link_br)) {
+                fprintf(mapf, TERM_GREEN(TERM_BOLD("%02x ")), tile_attr);
+                goto next_point;
+            } 
+            if (map_node != NULL) {
+                for (struct ap_node * node = map_node->next; node != map_node; node = node->next) {
+                    if (XYIN(xy, node->tl, node->br)) {
+                        fprintf(mapf, TERM_RED(TERM_BOLD("%02x ")), tile_attr);
+                        goto next_point;
+                    }
+                }
             }
+            for (size_t i = 0; i < ap_target_count; i++) {
+                if (XYIN(xy, ap_targets[i], XYOP1(ap_targets[i], +8))) {
+                    fprintf(mapf, TERM_BLUE(TERM_BOLD("%02x ")), tile_attr);
+                    goto next_point;
+                }
+            }
+            if (!(ap_tile_attrs[tile_attr] & TILE_ATTR_WALK)) {
+                fprintf(mapf, TERM_BOLD("%02x "), ap_map_attr(xy));
+                goto next_point;
+            }
+            fprintf(mapf, "%02x ", ap_map_attr(xy));
+next_point:;
         }
-        printf("\n");
+        fprintf(mapf, "\n");
     }
-    printf("--\n");
-    printf(PRIXY " x " PRIXY "\n", PRIXYF(topleft), PRIXYF(bottomright));
+    fprintf(mapf, "--\n");
+    fprintf(mapf, PRIXY " x " PRIXY "\n", PRIXYF(topleft), PRIXYF(bottomright));
+    fflush(mapf);
+}
+
+static int
+ap_set_targets(size_t count)
+{
+    assert(count < sizeof(ap_targets) / sizeof(*ap_targets));
+    ap_target_count = count;
+    ap_target_timeout = 0;
+    if (count == 0) 
+        return 0;
+
+    ap_targets[count] = ap_link_xy();
+    for (size_t i = 0; i < count; i++) {
+        ap_target_timeout += XYL1DIST(ap_targets[i], ap_targets[i+1]) * 2;
+    }
+    return ap_target_timeout;
 }
 
 int
 ap_follow_targets(uint16_t * joypad)
 {
     struct xy link = ap_link_xy();
+    if (ap_target_timeout <= 0) {
+        INFO("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0]));
+        ap_target_count = 0;
+        return RC_FAIL;
+    }
+
     struct xy target;
     while (true) {
-        if (ap_target_count < 1)
-            return 0;
+        if (ap_target_count < 1) {
+            INFO("L:" PRIXY "; done", PRIXYF(link));
+            return RC_DONE;
+        }
 
         target = ap_targets[ap_target_count-1];
         if (XYL1DIST(target, link) != 0)
@@ -207,6 +263,8 @@ ap_follow_targets(uint16_t * joypad)
 
         ap_target_count--;
     }
+
+    INFO("L:" PRIXY "; %zu:" PRIXY "; %d", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout);
 
     if (link.x > target.x)
         JOYPAD_SET(LEFT);
@@ -217,30 +275,61 @@ ap_follow_targets(uint16_t * joypad)
     else if (link.y < target.y)
         JOYPAD_SET(DOWN);
 
-    return 1;
+    ap_target_timeout--;
+
+    return RC_INPR;
 }
 
-static uint32_t
-ap_path_heuristic(struct xy src, struct xy dst)
+void
+ap_joypad_setdir(uint16_t * joypad, uint8_t dir)
 {
-    //struct xy vec = XY(ABSDIFF(src.x, dst.x), ABSDIFF(src.y, dst.y));
-    return XYL1DIST(src, dst);
+    // 0 U D L R LU LD RU RD 0
+    JOYPAD_CLEAR(UP);
+    JOYPAD_CLEAR(DOWN);
+    JOYPAD_CLEAR(LEFT);
+    JOYPAD_CLEAR(RIGHT);
+    switch (dir) {
+    case 1: JOYPAD_SET(UP); break;
+    case 2: JOYPAD_SET(DOWN); break;
+    case 3: JOYPAD_SET(LEFT); break;
+    case 4: JOYPAD_SET(RIGHT); break;
+    case 5: JOYPAD_SET(UP); JOYPAD_SET(LEFT); break;
+    case 6: JOYPAD_SET(UP); JOYPAD_SET(LEFT); break;
+    case 7: JOYPAD_SET(DOWN); JOYPAD_SET(RIGHT); break;
+    case 8: JOYPAD_SET(DOWN); JOYPAD_SET(RIGHT); break;
+    }
+}
+
+uint32_t
+ap_path_heuristic(struct xy src, struct xy dst_tl, struct xy dst_br)
+{
+    uint32_t distance = 0;
+    if (src.x < dst_tl.x)
+        distance += dst_tl.x - src.x;
+    else if (src.x > dst_br.x)
+        distance += src.x - dst_br.x;
+    if (src.y < dst_tl.y)
+        distance += dst_tl.y - src.y;
+    else if (src.y > dst_br.y)
+        distance += src.y - dst_br.y;
+    return distance;
 }
 
 static int
-ap_pathfind_local(struct xy destination, bool commit)
+ap_pathfind_local(struct xy destination_tl, struct xy destination_br, bool commit)
 {
-    ap_target_count = 0;
+    ap_set_targets(0);
 
     struct xy link = ap_link_xy();
 
     struct xy topleft, bottomright;
     ap_map_bounds(&topleft, &bottomright);
-    if (destination.x < topleft.x ||
-        destination.x > bottomright.x ||
-        destination.y < topleft.y ||
-        destination.y > bottomright.y) {
-        printf("error: out of map\n");
+    if (!XYIN(destination_tl, topleft, bottomright)) {
+        LOG("error: TL destination " PRIXYV "out of map", PRIXYVF(destination_tl));
+        return -1;
+    }
+    if (!XYIN(destination_br, topleft, bottomright)) {
+        LOG("error: BR destination " PRIXYV "out of map", PRIXYVF(destination_br));
         return -1;
     }
 
@@ -249,24 +338,31 @@ ap_pathfind_local(struct xy destination, bool commit)
     struct xy tl_offset = XYOP1(topleft, / 8);
 
     struct xy src = XYOP2(XYOP1(link, / 8), -, tl_offset);
-    struct xy dst = XYOP2(XYOP1(destination, / 8), -, tl_offset);
+    struct xy dst_tl = XYOP2(XYOP1(destination_tl, / 8), -, tl_offset);
+    struct xy dst_br = XYOP2(XYOP1(destination_br, / 8), -, tl_offset);
 
-    uint32_t distance = ap_path_heuristic(src, dst);
+    uint32_t distance = ap_path_heuristic(src, dst_tl, dst_br);
     if (distance > (size.x + size.y)) {
-        printf("error: invalid target " PRIXY, PRIXYF(destination));
+        printf("error: invalid target " PRIXYV " x " PRIXYV, PRIXYVF(destination_tl), PRIXYVF(destination_br));
         return -1;
     }
+    /*
     if (distance < 8) {
         ap_targets[0] = destination;
         return ap_target_count = 1;
     }
+    */
 
+    struct point_state;
     static struct point_state {
-        uint8_t dirfrom;
+        struct point_state * from;
+        struct xy xy;
+        uint8_t tile_attrs;
+        uint8_t ledge;
         uint32_t gscore;
         uint32_t fscore;
         uint32_t cost;
-    } buf[0x82 * 0x82];  // xxx: can this be 0x81 x 0x81?
+    } buf[0x82 * 0x82]; 
     if (grid.x * grid.y > 0x80 * 0x80) {
         printf("error: grid too large: " PRIXY "\n", PRIXYF(grid));
         return -1;
@@ -276,10 +372,13 @@ ap_pathfind_local(struct xy destination, bool commit)
 
     for (uint16_t y = 0; y < grid.y; y++) {
         for (uint16_t x = 0; x < grid.x; x++) {
-            state[y][x].dirfrom = 0;
+            state[y][x].from = NULL;
+            state[y][x].xy = XYOP1(XYOP2(XY(x, y), +, tl_offset), * 8);
             state[y][x].gscore = (uint32_t) -1;
             state[y][x].fscore = (uint32_t) -1;
             state[y][x].cost = 0;
+            state[y][x].ledge = 0;
+            state[y][x].tile_attrs = 0;
         }
     }
     for (uint16_t y = 0; y < grid.y; y++) {
@@ -287,18 +386,22 @@ ap_pathfind_local(struct xy destination, bool commit)
             uint32_t cost = 0;
             struct xy mapxy = XYOP2(XYOP1(XY(x, y), * 8), +, topleft);
             uint8_t tile = ap_tile_attrs[ap_map_attr(mapxy)];
-            if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR))
+            state[y][x].tile_attrs = tile;
+            if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
                 cost = 0;
-            else if (tile & TILE_ATTR_LFT0)
-                cost = 1000;
-            else
+            } else if (tile & TILE_ATTR_LDGE) {
+                cost = (1 << 20); // calculated at search time
+                state[y][x].ledge = (tile & 0x7) + 1;
+            } else if (tile & TILE_ATTR_LFT0) {
+                cost = 5000;
+            } else {
                 cost = (1 << 20);
+            }
 
-            // Link's XY cordinate is for his hat, his collision is lower
+            state[y-0][x-0].cost += cost;
+            state[y-0][x-1].cost += cost;
             state[y-1][x-0].cost += cost;
             state[y-1][x-1].cost += cost;
-            state[y-2][x-0].cost += cost;
-            state[y-2][x-1].cost += cost;
         }
     }
 
@@ -310,11 +413,11 @@ ap_pathfind_local(struct xy destination, bool commit)
     pq_clear(pq);
     pq_push(pq, 0, &src);
 
-    state[src.y][src.x].dirfrom = 9;
     state[src.y][src.x].fscore = 0;
     state[src.y][src.x].gscore = 0;
     
     size_t r;
+    struct xy final_xy;
     uint64_t min_heuristic = -1;
     for (r = 0; r < 0x80 * 0x80 + 100; r++) {
         struct xy node;
@@ -332,70 +435,134 @@ ap_pathfind_local(struct xy destination, bool commit)
             if (neighbor.x >= grid.x || neighbor.y >= grid.y)
                 continue;
 
+            // Only pick up objects if you are square with them
+            if (i == DIR_U || i == DIR_D || i >= 5) {
+                if ((state[neighbor.y][node.x].tile_attrs & TILE_ATTR_LFT0) !=
+                    (state[neighbor.y][node.x+1].tile_attrs & TILE_ATTR_LFT0))
+                    continue;
+            }
+            if (i == DIR_L || i == DIR_R || i >= 5) {
+                if ((state[node.y][neighbor.x].tile_attrs & TILE_ATTR_LFT0) !=
+                    (state[node.y+1][neighbor.x].tile_attrs & TILE_ATTR_LFT0))
+                    continue;
+            }
+            // Jump down ledges
+            if (state[node.y][node.x].ledge == i) {
+                while (neighbor.x < grid.x && neighbor.y < grid.y && neighbor.x > 0 && neighbor.y > 0) {
+                    if (state[neighbor.y][neighbor.x].cost < (1 << 20))
+                        break;
+                    neighbor.x += dir_dx[i];
+                    neighbor.y += dir_dy[i];
+                }
+            }
+
+            uint32_t heuristic = ap_path_heuristic(neighbor, dst_tl, dst_br);
+            if (heuristic == 0) {
+                final_xy = neighbor;
+                state[neighbor.y][neighbor.x].from = &state[node.y][node.x];
+                goto search_done;
+            }
+
             uint32_t gscore = state[node.y][node.x].gscore;
             gscore += dir_cost[i];
-            gscore += state[neighbor.y][neighbor.x].cost;
+            if (!state[neighbor.y][neighbor.x].ledge)
+                gscore += state[neighbor.y][neighbor.x].cost;
             if (gscore >= (1 << 20))
                 continue;
             if (gscore >= state[neighbor.y][neighbor.x].gscore)
                 continue;
 
-            uint32_t heuristic = ap_path_heuristic(neighbor, dst);
             min_heuristic = MIN(heuristic, min_heuristic);
             uint32_t fscore = gscore + heuristic;
-            state[neighbor.y][neighbor.x].dirfrom = i;
+            state[neighbor.y][neighbor.x].from = &state[node.y][node.x];
             state[neighbor.y][neighbor.x].gscore = gscore;
             state[neighbor.y][neighbor.x].fscore = fscore;
             
-            if (neighbor.x == dst.x && neighbor.y == dst.y) {
-                goto search_done;
-            }
             pq_push(pq, fscore, &neighbor);
         }
     }
-    if (commit) printf("A* timed out, min heuristic: %lu\n", min_heuristic);
+    if (commit) LOG("A* timed out, min heuristic: %lu", min_heuristic);
     return -1;
 search_failed:
-    if (commit) printf("A* failed, min heuristic: %lu\n", min_heuristic);
+    if (commit) LOG("A* failed, min heuristic: %lu", min_heuristic);
     return -1;
 search_done:
-    if (commit) printf("A* done in %zu steps, pq size = %zu\n", r, pq_size(pq));
+    if (commit) LOG("A* done in %zu steps, pq size = %zu", r, pq_size(pq));
     else return 1;
 
-    ap_target_count = 0;
-    ap_targets[ap_target_count++] = destination;
+    struct point_state * next = &state[final_xy.y][final_xy.x];
+    size_t count = 0;
+    ap_targets[count++] = XY(
+            MIN(next->xy.x, destination_br.x - 15),
+            MIN(next->xy.y, destination_br.y - 15));
 
-    struct xy next = dst;
-    uint8_t last_dirfrom = -1;
-    while (!(next.x == src.x && next.y == src.y)) {
-        uint8_t i = state[next.y][next.x].dirfrom;
-        next.x = (uint16_t) (next.x - dir_dx[i]);
-        next.y = (uint16_t) (next.y - dir_dy[i]);
-
-        if (i != last_dirfrom) {
-            ap_targets[ap_target_count++] = XYOP1(XYOP2(next, +, tl_offset), * 8);
-            printf("%zu, %u: "PRIXY "\n", ap_target_count, i, PRIXYF(ap_targets[ap_target_count-1]));
+    struct xy last_dir = XY(1, 2);
+    struct xy last_xy = XY(3, 4);
+    while (next != NULL) {
+        struct xy dir = XYOP2(next->xy, -, last_xy);
+        if (!next->ledge) {
+            if (!XYEQ(dir, last_dir)) {
+                ap_targets[count++] = next->xy;
+                //printf("%zu: "PRIXY "\n", count, PRIXYF(ap_targets[count-1]));
+            }
         }
-        last_dirfrom = i;
+        last_dir = dir;
+        last_xy = next->xy;
+        next = next->from;
     }
 
-    return ap_target_count;
+    int timeout = ap_set_targets(count);
+    ap_print_map();
+    return timeout;
 }
 
-void
+int
+ap_pathfind_node(struct ap_node * node)
+{
+    struct xy tl = node->tl;
+    struct xy br = node->br;
+    return ap_pathfind_local(tl, br, true);
+}
+
+static struct ap_node *
+ap_map_node(struct xy tl) {
+    size_t index = XYMAPNODE(tl);
+    struct ap_node * map_node = &map_nodes[index];
+    if (map_node->node_parent != NULL)
+        return map_node->node_parent;
+    return map_node;
+}
+
+struct ap_node *
 ap_update_map_node()
 {
+    static bool once = false;
+    if (!once) {
+        once = true;
+        for (int x = 0; x < 0x10000; x += 0x100) {
+            for (int y = 0; y < 0x10000; y += 0x100) {
+                snprintf(map_nodes[XYMAPNODE(XY(x, y))].name, sizeof map_nodes->name, "umap %02x,%02x", x >> 8, y >> 8);
+            }
+        }
+    }
     struct xy tl, br;
     ap_map_bounds(&tl, &br);
     size_t index = XYMAPNODE(tl);
-    if (index == last_map_node_idx)
-        return;
-
     struct ap_node *map_node = &map_nodes[index];
+    if (index == last_map_node_idx)
+        return map_node;
+    last_map_node_idx = index;
+
     if (map_node->node_parent != NULL) {
-        // TODO: support updating
+        // TODO: support graceful updating
         assert(map_node->node_parent == map_node);
-        return;
+
+        while (true) {
+            struct ap_node * node = LL_POP(map_node);
+            if (node == NULL)
+                break;
+            free(node);
+        }
     }
 
     struct xy xy;
@@ -404,11 +571,11 @@ ap_update_map_node()
             map_nodes[XYMAPNODE(xy)].node_parent = map_node;
         }
     }
-    map_node->node_next = map_node;
-    map_node->node_prev = map_node;
+    map_node->next = map_node;
+    map_node->prev = map_node;
     map_node->tl = tl;
     map_node->br = br;
-    snprintf(map_node->name, sizeof map_node->name, "map 0x%02zX", index);
+    snprintf(map_node->name, sizeof map_node->name, "0x%02zX map", index);
 
     int node_count = 0;
     struct ap_node * new_node = NULL;
@@ -418,22 +585,28 @@ ap_update_map_node()
             if (new_node == NULL) {
                 new_node = ap_node_append(map_node);
                 new_node->tl = xy;
-                snprintf(new_node->name, sizeof new_node->name, "N%d", ++node_count);
+                new_node->adjacent_direction = DIR_U;
+                new_node->node_adjacent = ap_map_node(XY(xy.x, xy.y - 0x100));
+                snprintf(new_node->name, sizeof new_node->name, "0x%02zX N%d", index, ++node_count);
             }
-            new_node->br = xy;
+            new_node->br = XYOP1(xy, + 7);
+            new_node->br.y += 8;
         } else if (new_node != NULL) {
             new_node = NULL;
         }
     }
     new_node = NULL;
-    for (xy.x = br.x - 8; xy.y < br.y; xy.y += 8) { // TR to BR
+    for (xy = XY(br.x & ~7, tl.y); xy.y < br.y; xy.y += 8) { // TR to BR
         if (ap_tile_attrs[ap_map_attr(xy)] & walk_mask) {
             if (new_node == NULL) {
                 new_node = ap_node_append(map_node);
                 new_node->tl = xy;
-                snprintf(new_node->name, sizeof new_node->name, "E%d", ++node_count);
+                new_node->tl.x -= 8;
+                new_node->adjacent_direction = DIR_R;
+                new_node->node_adjacent = ap_map_node(XY(xy.x + 0x100, xy.y));
+                snprintf(new_node->name, sizeof new_node->name, "0x%02zX E%d", index, ++node_count);
             }
-            new_node->br = xy;
+            new_node->br = XYOP1(xy, + 7);
         } else if (new_node != NULL) {
             new_node = NULL;
         }
@@ -444,27 +617,35 @@ ap_update_map_node()
             if (new_node == NULL) {
                 new_node = ap_node_append(map_node);
                 new_node->tl = xy;
-                snprintf(new_node->name, sizeof new_node->name, "W%d", ++node_count);
+                new_node->adjacent_direction = DIR_L;
+                new_node->node_adjacent = ap_map_node(XY(xy.x - 0x100, xy.y));
+                snprintf(new_node->name, sizeof new_node->name, "0x%02zX W%d", index, ++node_count);
             }
-            new_node->br = xy;
+            new_node->br = XYOP1(xy, + 7);
+            new_node->br.x += 8;
         } else if (new_node != NULL) {
             new_node = NULL;
         }
     }
     new_node = NULL;
-    for (xy.y = br.y - 8; xy.x < br.x; xy.x += 8) { // BL to BR
+    for (xy = XY(tl.x, br.y & ~7); xy.x < br.x; xy.x += 8) { // BL to BR
         if (ap_tile_attrs[ap_map_attr(xy)] & walk_mask) {
             if (new_node == NULL) {
                 new_node = ap_node_append(map_node);
                 new_node->tl = xy;
-                snprintf(new_node->name, sizeof new_node->name, "S%d", ++node_count);
+                new_node->tl.y -= 8;
+                new_node->adjacent_direction = DIR_D;
+                new_node->node_adjacent = ap_map_node(XY(xy.x, xy.y + 0x100));
+                snprintf(new_node->name, sizeof new_node->name, "0x%02zX S%d", index, ++node_count);
             }
-            new_node->br = xy;
+            new_node->br = XYOP1(xy, + 7);
         } else if (new_node != NULL) {
             new_node = NULL;
         }
     }
     if (!*ap_ram.in_building) {
+        LOG("xo: %04x, xm: %04x, yo: %04x, ym: %04x",
+            *ap_ram.map_x_offset, *ap_ram.map_x_mask, *ap_ram.map_y_offset, *ap_ram.map_y_mask);
         for (size_t i = 0; i < 0x81; i++) {
             if (ap_ram.over_ent_areas[i] != *ap_ram.map_area)
                 continue;
@@ -472,7 +653,14 @@ ap_update_map_node()
             node_count++;
             new_node->tl = ap_map16_to_xy(tl, ap_ram.over_ent_map16s[i]);
             new_node->br = XYOP1(new_node->tl, + 15);
+            new_node->tile_attr = 0x80; // not quite true
+            uint16_t id = ap_ram.over_ent_ids[i];
+            if (id <= 0x85) {
+                new_node->node_adjacent = ap_map_node(XY(ap_ram.entrance_xs[id], ap_ram.entrance_ys[id]));
+                new_node->adjacent_direction = DIR_U;
+            }
             snprintf(new_node->name, sizeof new_node->name, "door 0x%02x", ap_ram.over_ent_ids[i]);
+            LOG("tl: " PRIXYV ", out: " PRIXYV ", map16: %04x", PRIXYVF(tl), PRIXYVF(new_node->tl), ap_ram.over_ent_map16s[i]);
         }
         /* TODO: work out map16 decoding
         for (size_t i = 1; i < 0x1C; i++) {
@@ -489,8 +677,9 @@ ap_update_map_node()
     for (xy.y = tl.y; xy.y < br.y; xy.y += 0x10) {
         for (xy.x = tl.x; xy.x < br.x; xy.x += 0x10) {
             uint8_t attr = ap_map_attr(xy);
-            if ((ap_tile_attrs[attr] & TILE_ATTR_ITEM) || attr == 0x20) {
+            if (ap_tile_attrs[attr] & TILE_ATTR_ITEM) {
                 new_node = ap_node_append(map_node);
+                new_node->tile_attr = attr;
                 node_count++;
                 snprintf(new_node->name, sizeof new_node->name, "item 0x%02x", attr);
                 if (ap_map_attr(XYOP1(xy, + 15)) == attr) {
@@ -500,21 +689,35 @@ ap_update_map_node()
                     new_node->tl = XYOP1(xy, - 8);
                     new_node->br = XYOP1(xy, + 7);
                 }
+                if (ap_tile_attrs[attr] & TILE_ATTR_CHST) {
+                    // shift chests down to the square below
+                    new_node->tl.y += 16;
+                    new_node->br.y += 16;
+                }
             }
+        }
+    }
+
+    for (struct ap_node * node = map_node->next; node != map_node; node = node->next) {
+        if (node->node_adjacent) {
+            if (node->node_adjacent->node_parent == NULL)
+                ap_goal_add(GOAL_EXPLORE, node);
+        } else if (node->tile_attr) {
+            ap_goal_add(GOAL_ITEM, node);
         }
     }
 
     ap_print_map();
     printf("found %d nodes\n", node_count);
-    new_node = map_node;
     int i = 0; 
-    do {
-        bool reachable = ap_pathfind_local(new_node->tl, false) > 0;
-        printf("   %d. [%c] (" PRIXY " x " PRIXY ") %s\n", i++, "!."[reachable], PRIXYF(new_node->tl), PRIXYF(new_node->br), new_node->name);
-        new_node = new_node->node_next;
-    } while(new_node != map_node);
+    for (struct ap_node * node = map_node->next; node != map_node; node = node->next) {
+        bool reachable = ap_pathfind_local(node->tl, node->br, false) > 0;
+        node->_reachable = reachable;
+        printf("   %d. [%c] (" PRIXY " x " PRIXY ") %s\n", i++, "!."[reachable], PRIXYF(node->tl), PRIXYF(node->br), node->name);
+    }
 
-    while (true) {
+    /*
+    for (int tries = 100; tries; tries--) {
         printf("Choose 1-%d>", node_count);
         fflush(NULL);
         fseek(stdin,0,SEEK_END);
@@ -523,12 +726,14 @@ ap_update_map_node()
         if (i == 0) break;
         new_node = map_node;
         while (i--) {
-            new_node = new_node->node_next;
+            new_node = new_node->next;
         }
         printf("\nGoing to: %s\n", new_node->name);
         //ap_pathfind_local(XYMID(new_node->tl, new_node->br));
-        int rc = ap_pathfind_local(new_node->tl, true);
+        int rc = ap_pathfind_local(new_node->tl, new_node->br, true);
         if (rc >= 0) break;
     }
+    */
+    return map_node;
 }
 
