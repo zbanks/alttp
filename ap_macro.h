@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define CONCAT(x, y) CONCAT2(x, y)
 #define CONCAT2(x, y) x ## y
@@ -59,3 +60,5 @@ enum rc {
     RC_DONE = 0,
     RC_INPR = 1,
 };
+
+#define NONNULL(x) ({ assert((x) != NULL); x; })

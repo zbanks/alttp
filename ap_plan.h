@@ -62,7 +62,6 @@ AP_TASK_TYPE_LIST
     int state;
 
     struct ap_node * node;
-    struct ap_node * original_node;
     uint8_t direction;
 };
 

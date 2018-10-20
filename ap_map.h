@@ -16,20 +16,47 @@ static const struct xy dir_dxy[10] = {
     [DIR_LU] = XY(-1, -1), [DIR_LD] = XY(-1, +1),
     [DIR_RU] = XY(+1, -1), [DIR_RD] = XY(+1, +1),
 };
+static const char * const dir_names[10] = {
+    [0] = "0",
+#define X(d) [CONCAT(DIR_, d)] = STRINGIFY(d),
+DIR_LIST
+#undef X
+};
 
+#define NODE_TYPE_LIST  \
+    X(NONE) \
+    X(ITEM) \
+    X(TRANSITION) \
 
+struct ap_screen;
 struct ap_node {
-    struct ap_node * node_parent;
+    struct ap_screen * screen;
     struct ap_node * next;
     struct ap_node * prev;
-    struct ap_node * node_adjacent;
-    uint8_t adjacent_direction;
+
     struct xy tl;
     struct xy br;
+
+    uint8_t adjacent_direction;
+    struct ap_screen ** adjacent_screen;
+    struct ap_node * adjacent_node;
+
+    enum ap_node_type {
+#define X(type) CONCAT(NODE_, type),
+NODE_TYPE_LIST
+#undef X
+    } type;
     uint8_t tile_attr;
-    char name[16];
     bool _reachable;
-    struct ap_node * _plan_from;
+    char name[16];
+};
+
+struct ap_screen {
+    struct xy tl;
+    struct xy br;
+    struct ap_node node_list[1];
+    char name[64];
+    uint16_t attr_cache[0x80][0x80];
 };
 
 struct xy
@@ -39,7 +66,7 @@ void
 ap_map_bounds(struct xy * topleft, struct xy * bottomright);
 
 void
-ap_print_map();
+ap_print_screen(struct ap_screen * screen);
 
 uint32_t
 ap_path_heuristic(struct xy src, struct xy dst_tl, struct xy dst_br);
@@ -50,8 +77,8 @@ ap_follow_targets(uint16_t * joypad);
 void
 ap_joypad_setdir(uint16_t * joypad, uint8_t dir);
 
-struct ap_node *
-ap_update_map_node();
+struct ap_screen *
+ap_update_map_screen();
 
 int
 ap_pathfind_node(struct ap_node * node);

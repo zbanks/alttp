@@ -16,9 +16,11 @@ struct xy {
 #define XY(_x, _y) ((struct xy) { .x = CAST16(_x), .y = CAST16(_y) })
 #define XYOP1(a, op) XY(((a).x op), ((a).y op))
 #define XYOP2(a, op, b) XY(((a).x op (b).x), ((a).y op (b).y))
+#define XYFN1(fn, a) XY(fn((a).x), fn((a).y))
+#define XYFN2(fn, a, b) XY(fn((a).x, (b).x), fn((a).y, (b).y))
 #define XYL1DIST(a, b) ((int) ABSDIFF((a).x, (b).x) + (int) ABSDIFF((a).y, (b).y))
 #define XYMAP8(xy) ((((xy).x & 0x1F8) >> 3) | (((xy).y) & 0x1F8) << 3)
-#define XYMAPNODE(xy) ( ((xy).x >> 8) | ((xy).y & 0xFF00) )
+#define XYMAPSCREEN(xy) ( ((xy).x >> 8) | ((xy).y & 0xFF00) )
 #define XYMID(a, b) XYOP2(XYOP1(a, / 2), +, XYOP1(b, / 2))
 #define XYIN(xy, tl, br) ((xy).x >= (tl).x && (xy).y >= (tl).y && (xy).x <= (br).x && (xy).y <= (br).y)
 #define XYEQ(a, b) ((a).x == (b).x && (a).y == (b).y)
@@ -27,3 +29,7 @@ struct xy {
 #define PRIXYVF(xy) (xy).x, (xy).x, (xy).y, (xy).y
 #define PRIXY "%x,%x"
 #define PRIXYF(xy) (xy).x, (xy).y
+#define PRIBB PRIXY ";" PRIXY
+#define PRIBBF(bb) PRIXYF((bb).tl), PRIXYF((bb).br)
+#define PRIBBV PRIXYV " x " PRIXYV
+#define PRIBBVF(bb) PRIXYVF((bb).tl), PRIXYVF((bb).br)

@@ -25,10 +25,13 @@ static bool ap_new_goals = true;
 void
 ap_print_goals()
 {
-    return;
     printf("Goal list:\n");
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
-        printf("    * " PRIGOAL "\n", PRIGOALF(goal));
+        if (goal->node != NULL && goal->node->adjacent_screen != NULL && goal->node->adjacent_screen[0] != NULL)
+            printf("    * " PRIGOAL " to %s\n", PRIGOALF(goal), goal->node->adjacent_screen[0]->name);
+        else
+            printf("    * " PRIGOAL " to umapped\n", PRIGOALF(goal));
+        
     }
     printf("\n");
 }
@@ -87,7 +90,7 @@ static int
 ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
 {
     int rc;
-    struct ap_node * map_node = ap_update_map_node();
+    struct ap_screen * screen = ap_update_map_screen();
     switch (task->type) {
     case TASK_GOTO_POINT:
         switch (task->state) {
@@ -144,13 +147,13 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_TRANSITION:
-        LOG("transition: state=%d, timeout=%d", task->state, task->timeout);
+        LOG("transition: state=%d, timeout=%d, direction=%s", task->state, task->timeout, dir_names[task->direction]);
         switch (task->state) {
         case 0:
             task->timeout = 128;
             task->state++;
         case 1:
-            if (map_node != task->original_node) {
+            if (screen != task->node->screen) {
                 task->timeout = 8;
                 task->state++;
             } else {
@@ -158,10 +161,10 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             }
         case 2:
             if (task->timeout == 1) {
-                if (map_node != task->original_node) {
-                    LOG("transition: %p %p %p %p", map_node, task->original_node, task->node, task->node->node_parent);
-                    LOG("transition: %s; %s; %s", map_node->name, task->original_node->name, task->node->name);
-                    if (map_node == task->node || map_node == task->node->node_parent) return RC_DONE;
+                if (screen != task->node->screen) {
+                    LOG("transition: %p %p %p", screen, task->node->screen, task->node->adjacent_screen[0]);
+                    LOG("transition: %s; %s; -", screen->name, task->node->screen->name);
+                    if (screen == task->node->adjacent_screen[0]) return RC_DONE;
                 }
                 return RC_FAIL;
             }
@@ -183,7 +186,7 @@ static int
 ap_goal_score(struct ap_goal * goal)
 {
     assert(goal != NULL);
-    struct ap_node * map_node = ap_update_map_node();
+    struct ap_screen * screen = ap_update_map_screen();
 
     int score = 0;
     struct xy link = ap_link_xy();
@@ -194,14 +197,14 @@ ap_goal_score(struct ap_goal * goal)
     switch (goal->type) {
     case GOAL_ITEM:
         score += 0;
-        if (goal->node->node_parent != map_node)
+        if (goal->node->screen != screen)
             score = INT_MAX;
         break;
     case GOAL_EXPLORE:
         score += 1000;
-        if (goal->node->node_parent != map_node)
+        if (goal->node->screen != screen)
             score = INT_MAX;
-        if (goal->node->node_adjacent == NULL)
+        if (goal->node->adjacent_screen == NULL || goal->node->adjacent_screen[0] != NULL)
             score = INT_MAX;
         break;
     default:
@@ -251,7 +254,7 @@ ap_goal_fail(struct ap_goal * goal)
 static int
 ap_plan_goto_node(struct ap_node * node)
 {
-    struct ap_node * map_node = ap_update_map_node();
+    struct ap_screen * screen = ap_update_map_screen();
     //TODO
     return -1;
 }
@@ -259,7 +262,9 @@ ap_plan_goto_node(struct ap_node * node)
 static void
 ap_goal_evaluate()
 {
-    ap_new_goals = false;
+    if (ap_active_goal == NULL && !ap_new_goals)
+        return;
+
     ap_print_goals();
     int min_score = INT_MAX;
     struct ap_goal * min_goal = NULL;
@@ -271,8 +276,10 @@ ap_goal_evaluate()
         }
     }
     ap_active_goal = min_goal;
-    if (min_goal == NULL)
+    if (min_goal == NULL) {
+        ap_new_goals = false;
         return;
+    }
 
     LOG("Active goal: " PRIGOAL, PRIGOALF(min_goal));
 
@@ -309,10 +316,8 @@ ap_goal_evaluate()
 
         task = ap_task_append();
         task->type = TASK_TRANSITION;
-        task->node = min_goal->node->node_adjacent;
+        task->node = min_goal->node;
         assert(task->node != NULL);
-        task->original_node = min_goal->node->node_parent;
-        assert(task->original_node != NULL);
         task->direction = min_goal->node->adjacent_direction;
         snprintf(task->name, sizeof task->name, "screen transition");
         break;

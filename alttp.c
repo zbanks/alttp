@@ -23,10 +23,10 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 
     static uint16_t last_map = -1; 
     static uint16_t transition_counter = 0;
-    if (last_map == XYMAPNODE(topleft)) {
+    if (last_map == XYMAPSCREEN(topleft)) {
         transition_counter++;
     } else {
-        last_map = XYMAPNODE(topleft);
+        last_map = XYMAPSCREEN(topleft);
         transition_counter = 0;
     }
     if (transition_counter < 128 || !XYIN(link, topleft, bottomright)) {
@@ -36,10 +36,9 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 
     ap_debug = JOYPAD_TEST(START);
 
-    ap_update_map_node();
+    ap_update_map_screen();
     //LOG("touching_chest: %d", *ap_ram.touching_chest);
     ap_plan_evaluate(joypad);
-    //ap_print_map();
 
     JOYPAD_CLEAR(START);
 
@@ -51,7 +50,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 
 
     if (JOYPAD_EVENT(Y)) {
-        ap_print_map();
+        ap_print_screen(NULL);
     }
 
 
