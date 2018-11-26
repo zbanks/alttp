@@ -21,7 +21,7 @@
 #define TERM_MAGENTA(x) "\x1b[35m" x "\x1b[0m"
 #define TERM_CYAN(x)    "\x1b[36m" x "\x1b[0m"
 
-#define LOG(fmt, ...) printf("["__FILE__ ":%d] " fmt "\n", __LINE__, ## __VA_ARGS__)
+#define LOG(fmt, ...) printf("["__FILE__ ":%s:%d] " fmt "\n", __func__, __LINE__, ## __VA_ARGS__)
 #define DEBUG(...) ({ if(ap_debug){LOG(__VA_ARGS__);} })
 #define INFO_STRING_SIZE 256
 #define INFO(...) snprintf(ap_info_string, INFO_STRING_SIZE, __VA_ARGS__)
@@ -40,6 +40,12 @@ extern bool ap_debug;
     (node)->prev->next = (node); \
     (node)->next = (list); \
     (node)->next->prev = (node); })
+
+#define LL_PREPEND(list, node) ({ \
+    (node)->next = (list)->next; \
+    (node)->next->prev = (node); \
+    (node)->prev = (list); \
+    (node)->prev->next = (node); })
 
 #define LL_POP(list) ({ \
     __auto_type n = (list)->next; \
@@ -62,3 +68,4 @@ enum rc {
 };
 
 #define NONNULL(x) ({ assert((x) != NULL); x; })
+#define assert_bp(x) ({ if (!(x)) { __asm__("int3"); volatile bool _marker = 0; } })

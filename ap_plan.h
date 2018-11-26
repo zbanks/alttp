@@ -22,6 +22,7 @@ AP_GOAL_TYPE_LIST
     struct ap_node * node;
     int attempts;
 };
+extern struct ap_goal * ap_goal_list;
 
 #define GOAL_SCORE_IMPOSSIBLE INT_MAX
 
@@ -64,6 +65,7 @@ AP_TASK_TYPE_LIST
     struct ap_node * node;
     uint8_t direction;
 };
+extern struct ap_task * ap_task_list;
 
 #define PRITASK "%s %s [node=%s]"
 #define PRITASKF(t) ap_task_type_names[(t)->type], (t)->name, ((t)->node ? (t)->node->name : "(null)")

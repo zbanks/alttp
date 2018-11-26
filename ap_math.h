@@ -23,7 +23,10 @@ struct xy {
 #define XYMAPSCREEN(xy) ( ((xy).x >> 8) | ((xy).y & 0xFF00) )
 #define XYMID(a, b) XYOP2(XYOP1(a, / 2), +, XYOP1(b, / 2))
 #define XYIN(xy, tl, br) ((xy).x >= (tl).x && (xy).y >= (tl).y && (xy).x <= (br).x && (xy).y <= (br).y)
+#define XYLINKIN(xy, tl, br) ((xy).x >= (tl).x && (xy).y >= (tl).y && (xy).x + 15 <= (br).x && (xy).y + 15 <= (br).y)
 #define XYEQ(a, b) ((a).x == (b).x && (a).y == (b).y)
+#define XYRDIV8(xy) XY(((xy).x + 3) / 8, ((xy).y + 3) / 8)
+#define XYUNDER(xy, br) ((xy).x < (br).x && (xy).y < (br).y)
 
 #define PRIXYV "(%u %#06x, %u %#06x)"
 #define PRIXYVF(xy) (xy).x, (xy).x, (xy).y, (xy).y
@@ -33,3 +36,5 @@ struct xy {
 #define PRIBBF(bb) PRIXYF((bb).tl), PRIXYF((bb).br)
 #define PRIBBV PRIXYV " x " PRIXYV
 #define PRIBBVF(bb) PRIXYVF((bb).tl), PRIXYVF((bb).br)
+#define PRIBBWH PRIXY "@" PRIXY
+#define PRIBBWHF(bb) PRIXYF(XYOP2((bb).br, -, (bb).tl)), PRIXYF((bb).tl)

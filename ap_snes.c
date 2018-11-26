@@ -17,5 +17,6 @@ AP_RAM_LIST
 #undef X
 
     printf("----- initialized ------ \n");
-    ap_emu->load("home");
+    //ap_emu->load("well");
+    ap_emu->load("castle");
 }

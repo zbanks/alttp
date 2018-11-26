@@ -16,19 +16,19 @@ AP_TASK_TYPE_LIST
 };
 
 static struct ap_goal _ap_goal_list = {.next = &_ap_goal_list, .prev = &_ap_goal_list};
-static struct ap_goal * ap_goal_list = &_ap_goal_list;
+struct ap_goal * ap_goal_list = &_ap_goal_list;
 static struct ap_goal * ap_active_goal = NULL;
 static struct ap_task _ap_task_list = {.next = &_ap_task_list, .prev = &_ap_task_list};
-static struct ap_task * ap_task_list = &_ap_task_list;
+struct ap_task * ap_task_list = &_ap_task_list;
 static bool ap_new_goals = true;
 
 void
 ap_print_goals()
 {
-    printf("Goal list:\n");
+    printf("Goal list: (current index=%#x)\n", XYMAPSCREEN(ap_link_xy()));
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
-        if (goal->node != NULL && goal->node->adjacent_screen != NULL && goal->node->adjacent_screen[0] != NULL)
-            printf("    * " PRIGOAL " to %s\n", PRIGOALF(goal), goal->node->adjacent_screen[0]->name);
+        if (goal->node != NULL && goal->node->adjacent_node != NULL)
+            printf("    * " PRIGOAL " to %s\n", PRIGOALF(goal), goal->node->adjacent_node->name);
         else
             printf("    * " PRIGOAL " to umapped\n", PRIGOALF(goal));
         
@@ -64,17 +64,22 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
 static struct ap_task *
 ap_task_append()
 {
-    struct ap_task * task = calloc(1, sizeof *task);
-    assert(task != NULL);
-
+    struct ap_task * task = NONNULL(calloc(1, sizeof *task));
     LL_PUSH(ap_task_list, task);
+    return task;
+}
+
+static struct ap_task *
+ap_task_prepend()
+{
+    struct ap_task * task = NONNULL(calloc(1, sizeof *task));
+    LL_PREPEND(ap_task_list, task);
     return task;
 }
 
 void
 ap_print_tasks()
 {
-    return;
     if (ap_active_goal == NULL) {
         printf("Current Goal: " PRIGOAL "\n", PRIGOALF(ap_active_goal));
     }
@@ -90,7 +95,7 @@ static int
 ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
 {
     int rc;
-    struct ap_screen * screen = ap_update_map_screen();
+    struct ap_screen * screen = ap_update_map_screen(false);
     switch (task->type) {
     case TASK_GOTO_POINT:
         switch (task->state) {
@@ -101,14 +106,14 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->state++;
         case 1:
         case 2:
-            if (task->state == 2 || (*ap_ram.touching_chest & 0xF)) {
+            if (task->state == 2) {
                 JOYPAD_CLEAR(A);
                 task->state = 1;
-            } else if (*ap_ram.push_dir_bitmask & 0xF) {
+            } else if (*ap_ram.push_timer != 0x20) {
                 JOYPAD_SET(A);
                 task->state = 2;
             } else if (*ap_ram.carrying_bit7) {
-                JOYPAD_SET(A);
+                //JOYPAD_SET(A);
                 task->state = 2;
             }
             return ap_follow_targets(joypad);
@@ -147,10 +152,10 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_TRANSITION:
-        LOG("transition: state=%d, timeout=%d, direction=%s", task->state, task->timeout, dir_names[task->direction]);
+        INFO("cross: st=%d timeout=%d dir=%s", task->state, task->timeout, dir_names[task->direction]);
         switch (task->state) {
         case 0:
-            task->timeout = 128;
+            task->timeout = 128 + 64;
             task->state++;
         case 1:
             if (screen != task->node->screen) {
@@ -162,9 +167,11 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         case 2:
             if (task->timeout == 1) {
                 if (screen != task->node->screen) {
-                    LOG("transition: %p %p %p", screen, task->node->screen, task->node->adjacent_screen[0]);
-                    LOG("transition: %s; %s; -", screen->name, task->node->screen->name);
-                    if (screen == task->node->adjacent_screen[0]) return RC_DONE;
+                    ap_map_record_transition_from(task->node);
+                    return RC_DONE;
+                    //LOG("transition: %p %p %p", screen, task->node->screen, task->node->adjacent_screen[0]);
+                    //LOG("transition: %s; %s; -", screen->name, task->node->screen->name);
+                    //if (screen == task->node->adjacent_screen[0]) return RC_DONE;
                 }
                 return RC_FAIL;
             }
@@ -182,33 +189,34 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     return RC_INPR;
 }
 
+#define GOAL_SCORE_UNSATISFIABLE    (INT_MAX)
+#define GOAL_SCORE_COMPLETE         (-2)
 static int
 ap_goal_score(struct ap_goal * goal)
 {
     assert(goal != NULL);
-    struct ap_screen * screen = ap_update_map_screen();
+    struct ap_screen * screen = ap_update_map_screen(false);
 
     int score = 0;
     struct xy link = ap_link_xy();
     if (goal->node != NULL) {
         score += ap_path_heuristic(link, goal->node->tl, goal->node->br);
     }
-    score += goal->attempts * 1000000;
+    score += goal->attempts * 100; //1000000;
     switch (goal->type) {
     case GOAL_ITEM:
         score += 0;
         if (goal->node->screen != screen)
-            score = INT_MAX;
+            score = GOAL_SCORE_UNSATISFIABLE;
         break;
     case GOAL_EXPLORE:
-        score += 1000;
-        if (goal->node->screen != screen)
-            score = INT_MAX;
-        if (goal->node->adjacent_screen == NULL || goal->node->adjacent_screen[0] != NULL)
-            score = INT_MAX;
+        //if (goal->node->type != NODE_SWITCH)
+            score += 1000;
+        if (goal->node->adjacent_node != NULL)
+            score = GOAL_SCORE_COMPLETE;
         break;
     default:
-        score = INT_MAX;
+        score = GOAL_SCORE_UNSATISFIABLE;
         break;
     }
 
@@ -254,7 +262,7 @@ ap_goal_fail(struct ap_goal * goal)
 static int
 ap_plan_goto_node(struct ap_node * node)
 {
-    struct ap_screen * screen = ap_update_map_screen();
+    struct ap_screen * screen = ap_update_map_screen(false);
     //TODO
     return -1;
 }
@@ -262,14 +270,26 @@ ap_plan_goto_node(struct ap_node * node)
 static void
 ap_goal_evaluate()
 {
+    ap_update_map_screen(true);
     if (ap_active_goal == NULL && !ap_new_goals)
         return;
-
     ap_print_goals();
+
+retry_new_goal:;
     int min_score = INT_MAX;
     struct ap_goal * min_goal = NULL;
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
         int score = ap_goal_score(goal);
+        if (score == GOAL_SCORE_COMPLETE) {
+            struct ap_goal * g = goal;
+            goal = goal->prev;
+            ap_goal_complete(g);
+            continue;
+        }
+        if (score == GOAL_SCORE_UNSATISFIABLE) {
+            continue;
+        }
+        assert(score >= 0);
         if (score < min_score) {
             min_score = score;
             min_goal = goal;
@@ -278,6 +298,8 @@ ap_goal_evaluate()
     ap_active_goal = min_goal;
     if (min_goal == NULL) {
         ap_new_goals = false;
+        ap_print_map_full();
+        assert_bp(false);
         return;
     }
 
@@ -289,14 +311,49 @@ ap_goal_evaluate()
     assert(ap_task_list->next == ap_task_list);
     assert(ap_task_list->prev == ap_task_list);
     struct ap_task * task = NULL;
+    
+    // Get to point
+    switch (min_goal->type) {
+    case GOAL_ITEM:
+    case GOAL_EXPLORE:;
+        struct ap_node * node = min_goal->node;
+        int rc = ap_pathfind_node(node);
+        if (rc < 0) {
+            ap_goal_fail(min_goal);
+            ap_active_goal = NULL;
+            goto retry_new_goal;
+        }
+        if (node->screen == ap_update_map_screen(false)) {
+            task = ap_task_prepend(); 
+            task->type = TASK_GOTO_POINT;
+            task->node = node;
+            snprintf(task->name, sizeof task->name, "goto point onscreen");
+            break;
+        }
+
+        uint64_t iter = node->pgsearch.iter;
+        while (node->pgsearch.from != NULL) {
+            assert(node->pgsearch.iter == iter);
+            if (node->screen == node->pgsearch.from->screen) {
+                task = ap_task_prepend(); 
+                task->type = TASK_GOTO_POINT;
+                task->node = node;
+                snprintf(task->name, sizeof task->name, "goto point onscreen");
+            } else {
+                task = ap_task_prepend(); 
+                task->type = TASK_TRANSITION;
+                task->node = node->pgsearch.from;
+                task->direction = node->pgsearch.from->adjacent_direction;
+                snprintf(task->name, sizeof task->name, "transition %s", dir_names[task->direction]);
+            }
+            node = node->pgsearch.from;
+        }
+    default:;
+    }
+
     switch (min_goal->type) {
     case GOAL_ITEM:
         if (ap_tile_attrs[min_goal->node->tile_attr] & TILE_ATTR_CHST) {
-            task = ap_task_append();
-            task->type = TASK_GOTO_POINT;
-            task->node = min_goal->node;
-            snprintf(task->name, sizeof task->name, "item goto local");
-
             task = ap_task_append();
             task->type = TASK_CHEST;
             task->node = min_goal->node;
@@ -309,17 +366,11 @@ ap_goal_evaluate()
         }
         break;
     case GOAL_EXPLORE:
-        task = ap_task_append();
-        task->type = TASK_GOTO_POINT;
-        task->node = min_goal->node;
-        snprintf(task->name, sizeof task->name, "explore point");
-
-        task = ap_task_append();
+        task = ap_task_append(); 
         task->type = TASK_TRANSITION;
         task->node = min_goal->node;
-        assert(task->node != NULL);
         task->direction = min_goal->node->adjacent_direction;
-        snprintf(task->name, sizeof task->name, "screen transition");
+        snprintf(task->name, sizeof task->name, "final transition %s", dir_names[task->direction]);
         break;
     default:
         LOG("Invalid goal type: %d", min_goal->type);
@@ -333,6 +384,7 @@ ap_plan_evaluate(uint16_t * joypad)
         if (ap_active_goal == NULL) {
             ap_goal_evaluate();
             if (ap_active_goal == NULL) return;
+            ap_print_tasks();
         }
 
         struct ap_task * task = LL_PEEK(ap_task_list);
