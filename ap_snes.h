@@ -32,6 +32,8 @@
     _ret; })
 
 #define AP_RAM_LIST \
+    X(module_index,         uint8_t,   0x7E0010)   \
+    X(submodule_index,      uint8_t,   0x7E0011)   \
     X(frame_counter,        uint8_t,   0x7E001A)   \
     X(in_building,          uint8_t,   0x7E001B)   \
     X(area,                 uint8_t,   0x7E008A)   \
@@ -43,9 +45,12 @@
     X(link_direction,       uint8_t,   0x7E002F)   \
     X(link_swordstate,      uint8_t,   0x7E003A)   \
     X(link_state,           uint8_t,   0x7E005D)   \
+    X(overworld_index,      uint16_t,  0x7E008A)   \
     X(dungeon_room,         uint16_t,  0x7E00A0)   \
     X(menu_part,            uint8_t,   0x7E00C8)   \
+    X(room_state,           uint16_t,  0x7E0400)   \
     X(link_lower_level,     uint8_t,   0x7E00EE)   \
+    X(dngn_open_doors,      uint16_t,  0x7E068C)   \
     X(sprite_drop,          uint8_t,   0x7E0CBA)   \
     X(sprite_y_lo,          uint8_t,   0x7E0D00)   \
     X(sprite_x_lo,          uint8_t,   0x7E0D10)   \
@@ -88,6 +93,9 @@
     X(push_timer,           uint8_t,   0x7E0371)   \
     X(carrying_bit7,        uint8_t,   0x7E0308)   \
     X(ignore_sprites,       uint8_t,   0x7E037B)   \
+    X(sram_room_state,      uint16_t,  0x7EF000)   \
+    X(sram_overworld_state, uint8_t,   0x7EF280)   \
+    X(inventory_bombs,      uint8_t,   0x7EF343)   \
     X(health_current,       uint8_t,   0x7EF36D)   \
     X(health_capacity,      uint8_t,   0x7EF36C)   \
 
@@ -241,7 +249,7 @@ static const uint16_t ap_tile_attrs[256] = {
     [0xA4] = TILE_ATTR_WALK,
     [0xA5] = TILE_ATTR_WALK,
 
-    [0xF8] = TILE_ATTR_DOOR, // Key door?
+    [0xF8] = TILE_ATTR_DOOR, // Locked door, 0x8000?
     // Fake/unknown
     [0xFF] = TILE_ATTR_WALK,
 };
@@ -521,6 +529,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xB8] = 0, // Monologue Testing Sprite (Debug Artifact)
     [0xB9] = 0, // Feuding Friends on Death Mountain
     [0xBA] = 0, // Whirlpool
+    // subtype2: 0x00 salesman; 0x0c bombs; 0x0a one heart; 0x07 red potion
     [0xBB] = SPRITE_ATTR_BLOK | SPRITE_ATTR_TALK, // Salesman / chestgame guy / 300 rupee giver guy / Chest game thief / Item for sale
     [0xBC] = SPRITE_ATTR_BLOK, // Drunk in the inn
     [0xBD] = SPRITE_ATTR_ENMY, // Vitreous (the large eyeball)
@@ -582,3 +591,46 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xF1] = 0, // Cane of Somaria Platform (same as 0xED but this index is not used)
     [0xF2] = SPRITE_ATTR_BLOK, // Medallion Tablet
 };
+
+static const char * ap_sprite_attr_name(uint8_t idx) {
+    uint16_t attr = ap_sprite_attrs[idx];
+    static char sbuf[1024];
+    char * buf = sbuf;
+#define X(d) if (attr & CONCAT(SPRITE_ATTR_, d)) { \
+    if (buf != sbuf) { *buf++ = '|'; } \
+    buf += sprintf(buf, STRINGIFY(d)); \
+    }
+SPRITE_ATTR_LIST
+#undef X
+    return sbuf;
+}
+
+// module_index
+// 0x00 Nintendo presents screen + Title screen
+// 0x01 Player select screen
+// 0x02 Copy Player Mode
+// 0x03 Erase Player Mode
+// 0x04 Register your name screen
+// 0x05 Loading Game Mode
+// 0x06 Pre House/Dungeon Mode
+// 0x07 In house/dungeon
+// 0x08 Pre Overworld Mode
+// 0x09 In OW
+// 0x0A Pre Overworld Mode (special overworld)
+// 0x0B Overworld Mode (special overworld)
+// 0x0C Unused?
+// 0x0D Blank Screen
+// 0x0E Text Mode/Item Screen/Map
+// 0x0F Closing Spotlight
+// 0x10 Opening Spotlight
+// 0x11 Happens when you fall into a hole from the OW.
+// 0x12 Death Mode
+// 0x13 Boss Victory Mode (refills stats)
+// 0x14 Cutscene in title screen (history sequence)
+// 0x15 Module for Magic Mirror
+// 0x16 Module for refilling stats after boss.
+// 0x17 Restart mode (save and quit)
+// 0x18 Ganon exits from Agahnim's body. Chase Mode.
+// 0x19 Triforce Room scene
+// 0x1A End sequence
+// 0x1B Screen to select where to start from (House, sanctuary, etc.)

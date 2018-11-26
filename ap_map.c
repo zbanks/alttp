@@ -255,7 +255,7 @@ void
 ap_print_map_screen(struct ap_screen * screen)
 {
     FILE * mapf = fopen("map", "w");
-    FILE * mapimg = fopen("map.pbm", "w");
+    FILE * mapimg = fopen("map.pbm.tmp", "w");
 
     struct xy link = ap_link_xy();
     struct xy link_tl = link;
@@ -335,6 +335,7 @@ next_point:;
     fprintf(mapf, "Screen '%s': " PRIBBV "\n", screen->name, PRIBBVF(*screen));
     fclose(mapf);
     fclose(mapimg);
+    rename("map.pbm.tmp", "map.pbm");
 }
 
 static int
@@ -551,7 +552,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
     }
 
     if (commit) {
-        LOG("Starting pathfind in screen " PRIBBV ", start " PRIXYV, PRIBBVF(*screen), PRIXYVF(start_xy));
+        //LOG("Starting pathfind in screen " PRIBBV ", start " PRIXYV, PRIBBVF(*screen), PRIXYVF(start_xy));
     }
 
     start_xy = XYFN2(MAX, start_xy, XYOP1(screen->tl, + 16));
@@ -759,7 +760,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             // Jump down ledges
             uint8_t ledge_mask = 1ul << (i - 1);
             assert(ledge_mask != 0);
-            if (state[node.y][node.x].ledge & ledge_mask) {
+            if (false && (state[node.y][node.x].ledge & ledge_mask)) {
                 bool fail_ledge = false;
                 int iters = 0;
                 while (true) {
@@ -892,8 +893,7 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         return ap_pathfind_local(start_screen, start_xy, destination->tl, destination->br, commit);
     }
 
-    if (commit)
-        LOG("Starting global search from " PRIXYV " to " PRIBBV, PRIXYVF(start_xy), PRIBBVF(*destination));
+    //if (commit) LOG("Starting global search from " PRIXYV " to " PRIBBV, PRIXYVF(start_xy), PRIBBVF(*destination));
 
     static struct pq * pq = NULL;
     if (pq == NULL) {
@@ -998,7 +998,7 @@ void
 ap_print_map_full()
 {
     ap_print_state();
-    FILE * mapf = fopen("full_map.pgm", "w");
+    FILE * mapf = fopen("full_map.pgm.tmp", "w");
     fprintf(mapf, "P6 %u %u %u\n", 0xA00, 0x600, 255);
     //fprintf(mapf, "P6 %u %u %u\n", 0x800, 0x800, 255);
 
@@ -1064,8 +1064,8 @@ ap_print_map_full()
 next_point:;
         }
     }
-    fflush(mapf);
     fclose(mapf);
+    rename("full_map.pgm.tmp", "full_map.pgm");
     LOG("Exported full map");
 }
 
@@ -1298,8 +1298,7 @@ ap_update_map_screen(bool force)
         }
     }
     if (!*ap_ram.in_building) {
-        LOG("xo: %04x, xm: %04x, yo: %04x, ym: %04x",
-            *ap_ram.map_x_offset, *ap_ram.map_x_mask, *ap_ram.map_y_offset, *ap_ram.map_y_mask);
+        //LOG("xo: %04x, xm: %04x, yo: %04x, ym: %04x", *ap_ram.map_x_offset, *ap_ram.map_x_mask, *ap_ram.map_y_offset, *ap_ram.map_y_mask);
         for (size_t i = 0; i < 0x81; i++) {
             if (ap_ram.over_ent_areas[i] != *ap_ram.map_area)
                 continue;
@@ -1319,7 +1318,7 @@ ap_update_map_screen(bool force)
             //new_node->adjacent_screen = &map_screens[XYMAPSCREEN(entrance)];
             new_node->adjacent_direction = DIR_U;
             snprintf(new_node->name, sizeof new_node->name, "door 0x%02x", ap_ram.over_ent_ids[i]);
-            LOG("tl: " PRIXYV ", out: " PRIXYV ", map16: %04x", PRIXYVF(tl), PRIXYVF(new_node->tl), ap_ram.over_ent_map16s[i]);
+            //LOG("tl: " PRIXYV ", out: " PRIXYV ", map16: %04x", PRIXYVF(tl), PRIXYVF(new_node->tl), ap_ram.over_ent_map16s[i]);
             ap_screen_commit_node(screen, &new_node);
             new_node_count++;
         }
@@ -1390,6 +1389,19 @@ ap_update_map_screen(bool force)
             }
         }
     }
+    for (uint8_t i = 0; i < 16; i++) {
+        if (ap_ram.sprite_type[i] == 0)
+            continue;
+        uint16_t sprite_attrs = ap_sprite_attrs[ap_ram.sprite_type[i]];
+        if (!(sprite_attrs & (SPRITE_ATTR_SWCH | SPRITE_ATTR_TALK | SPRITE_ATTR_FLLW | SPRITE_ATTR_ITEM)))
+            continue;
+
+        struct xy sprite_tl = ap_sprite_xy(i);
+        LOG("Sprite %-2u: attrs=%s type=%#x st1=%#x st2=%#x " PRIXYV,
+            i, ap_sprite_attr_name(ap_ram.sprite_type[i]), 
+            ap_ram.sprite_type[i], ap_ram.sprite_subtype1[i], ap_ram.sprite_subtype2[i],
+            PRIXYVF(sprite_tl));
+    }
 
     ap_print_map_screen(screen);
     printf("found %d nodes\n", new_node_count);
@@ -1397,8 +1409,8 @@ ap_update_map_screen(bool force)
     for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
         bool reachable = ap_pathfind_local(screen, ap_link_xy(), node->tl, node->br, false) > 0;
         node->_reachable = reachable;
-        printf("   %d. [%c %c] (" PRIXY " x " PRIXY ") %s\n",
-                i++, "!."[reachable], "?."[node->adjacent_node != NULL], PRIXYF(node->tl), PRIXYF(node->br), node->name);
+        printf("   %d. [%c%c] (" PRIXY " x " PRIXY ") %s\n",
+                i++, "uR"[reachable], "uM"[node->adjacent_node != NULL], PRIXYF(node->tl), PRIXYF(node->br), node->name);
     }
 
     return screen;

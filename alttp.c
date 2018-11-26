@@ -10,10 +10,33 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     *ap_emu->info_string_ptr = ap_info_string;
 
     if (JOYPAD_TEST(X)) return;
+    /*
     if (JOYPAD_EVENT(START)) {
         JOYPAD_CLEAR(START);
-        if (frame > 60)
-            ap_emu->save("home");
+        if (frame > 60) ap_emu->save("home");
+    }
+    */
+// 0x07 In house/dungeon
+// 0x09 In OW
+// 0x0B Overworld Mode (special overworld)
+    uint8_t module_index = *ap_ram.module_index;
+    switch (module_index) {
+    case 0x07:
+    case 0x09:
+    case 0x0B:
+        break;
+    case 0x0E:
+        if (frame % 4 == 0) {
+            JOYPAD_SET(START);
+            JOYPAD_SET(B);
+        } else {
+            JOYPAD_CLEAR(START);
+            JOYPAD_CLEAR(B);
+        }
+        // fallthrough
+    default:
+        INFO("Module Index: %#x", module_index);
+        return;
     }
 
     struct xy topleft, bottomright;
@@ -51,11 +74,11 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     } else {
         //LOG("touching_chest: %d", *ap_ram.touching_chest)g;
         if (!JOYPAD_TEST(Y)) {
-            ap_plan_evaluate(joypad);
+            //ap_plan_evaluate(joypad);
         }
     }
 
-    JOYPAD_CLEAR(START);
+    //JOYPAD_CLEAR(START);
 
     if (!JOYPAD_TEST(TR)) {
         //ap_follow_targets(joypad);
@@ -73,7 +96,13 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         //ap_print_map_screen(NULL);
     }
 
+    // sram_overworld_state & 0x2 = bomb open
 
+    if (*ap_ram.in_building) {
+        INFO("Room: %x St: %4x SR: %4x", *ap_ram.dungeon_room, *ap_ram.room_state, ap_ram.sram_room_state[*ap_ram.dungeon_room]);
+    } else {
+        INFO("Ovrwld: %x St: %2x", *ap_ram.overworld_index, ap_ram.sram_overworld_state[*ap_ram.overworld_index]);
+    }
 
     //uint8_t *b = ap_emu->base(0x7E001A);
     //INFO_HEXDUMP(b);
@@ -84,4 +113,5 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     // Cheating!
     *(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;
     *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
+    *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
 }
