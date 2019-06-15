@@ -22,6 +22,9 @@ static struct ap_task _ap_task_list = {.next = &_ap_task_list, .prev = &_ap_task
 struct ap_task * ap_task_list = &_ap_task_list;
 static bool ap_new_goals = true;
 
+static struct ap_goal * item_goal_flippers = NULL;
+static struct ap_goal * item_goal_bombs = NULL;
+
 void
 ap_print_goals()
 {
@@ -36,13 +39,14 @@ ap_print_goals()
     printf("\n");
 }
 
-struct ap_goal *
+static struct ap_goal *
 ap_goal_append()
 {
     struct ap_goal * goal = calloc(1, sizeof *goal);
     assert(goal != NULL);
 
     LL_PUSH(ap_goal_list, goal);
+    ap_graph_init(&goal->graph);
     ap_new_goals = true;
     return goal;
 }
@@ -58,6 +62,12 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
     goal->type = type;
     goal->node = node;
     snprintf(goal->name, sizeof goal->name, "-");
+    if (type == GOAL_EXPLORE) {
+        LOG("New explore, attr: %#x", node->tile_attr);
+    }
+    if (type == GOAL_EXPLORE && (ap_tile_attrs[node->tile_attr] & TILE_ATTR_SWIM)) {
+        ap_graph_add_prereq(&goal->graph, &item_goal_flippers->graph);
+    }
     return goal;
 }
 
@@ -75,6 +85,28 @@ ap_task_prepend()
     struct ap_task * task = NONNULL(calloc(1, sizeof *task));
     LL_PREPEND(ap_task_list, task);
     return task;
+}
+
+const char *
+ap_print_task(const struct ap_task * task)
+{
+    static char sbuf[2048];
+    char * buf = sbuf;
+    buf += sprintf(buf, "%s %s", ap_task_type_names[task->type], task->name);
+    switch (task->type) {
+    case TASK_GOTO_POINT:
+    case TASK_OPEN_CHEST:
+    case TASK_LIFT_POT:
+    case TASK_TRANSITION:
+        buf += sprintf(buf, "[node=%s]", (task->node ? task->node->name : "(null)"));
+        break;
+    case TASK_SET_INVENTORY:
+        buf += sprintf(buf, "[item=%#x]", task->item);
+        break;
+    case TASK_NONE:
+        break;
+    }
+    return sbuf;
 }
 
 void
@@ -119,16 +151,17 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             return ap_follow_targets(joypad);
         }
         break;
-    case TASK_CHEST:
+    case TASK_OPEN_CHEST:
         switch (task->state) {
         case 0:
             task->timeout = 64;
             task->state++;
         case 1:
             JOYPAD_SET(UP);
-            if (*ap_ram.touching_chest & 0xF) {
-                task->state++;
+            if (!(*ap_ram.touching_chest & 0xF)) {
+                break;
             }
+            task->state++;
         case 2:
         case 3:
             if (task->state == 2) { JOYPAD_SET(A); task->state = 3; }
@@ -137,7 +170,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             if (*ap_ram.item_recv_method == 1) return RC_DONE;
         }
         break;
-    case TASK_POT:
+    case TASK_LIFT_POT:
         switch (task->state) {
         case 0:
             rc = ap_pathfind_node(task->node);
@@ -155,7 +188,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         INFO("cross: st=%d timeout=%d dir=%s", task->state, task->timeout, dir_names[task->direction]);
         switch (task->state) {
         case 0:
-            task->timeout = 128 + 64;
+            task->timeout = 200;
             task->state++;
         case 1:
             if (screen != task->node->screen) {
@@ -163,6 +196,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                 task->state++;
             } else {
                 ap_joypad_setdir(joypad, task->direction);
+                break;
             }
         case 2:
             if (task->timeout == 1) {
@@ -174,6 +208,38 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                     //if (screen == task->node->adjacent_screen[0]) return RC_DONE;
                 }
                 return RC_FAIL;
+            }
+        }
+        break;
+    case TASK_SET_INVENTORY:
+        INFO("inv to %u", task->item);
+        if (*ap_ram.module_index != 0x0E && *ap_ram.current_item == task->item) {
+            return RC_DONE;
+        }
+        switch (task->state) {
+        case 0:
+            task->timeout = 200;
+            task->state++;
+        case 1:
+            if (*ap_ram.module_index != 0x0E) {
+                if (task->timeout & 1) {
+                    JOYPAD_SET(START);
+                }
+                break;
+            }
+            task->state++;
+        case 2:
+            if (*ap_ram.current_item != task->item) {
+                if (task->timeout & 1) {
+                    // XXX: Actually navigate to the right item
+                    JOYPAD_SET(LEFT);
+                }
+                break;
+            }
+            task->state++;
+        case 3: 
+            if (task->timeout & 1) {
+                JOYPAD_SET(START);
             }
         }
         break;
@@ -195,16 +261,21 @@ static int
 ap_goal_score(struct ap_goal * goal)
 {
     assert(goal != NULL);
+    if (ap_graph_is_blocked(&goal->graph)) {
+        return GOAL_SCORE_UNSATISFIABLE;
+    }
+
     struct ap_screen * screen = ap_update_map_screen(false);
 
     int score = 0;
-    struct xy link = ap_link_xy();
     if (goal->node != NULL) {
+        struct xy link = ap_link_xy();
         score += ap_path_heuristic(link, goal->node->tl, goal->node->br);
     }
     score += goal->attempts * 100; //1000000;
     switch (goal->type) {
-    case GOAL_ITEM:
+    case GOAL_PICKUP:
+    case GOAL_CHEST:
         score += 0;
         if (goal->node->screen != screen)
             score = GOAL_SCORE_UNSATISFIABLE;
@@ -214,6 +285,13 @@ ap_goal_score(struct ap_goal * goal)
             score += 1000;
         if (goal->node->adjacent_node != NULL)
             score = GOAL_SCORE_COMPLETE;
+        break;
+    case GOAL_ITEM:
+        if (ap_ram.inventory_base[goal->item]) {
+            score = GOAL_SCORE_COMPLETE;
+        } else {
+            score = GOAL_SCORE_UNSATISFIABLE;
+        }
         break;
     default:
         score = GOAL_SCORE_UNSATISFIABLE;
@@ -227,19 +305,21 @@ static void
 ap_goal_complete(struct ap_goal * goal)
 {
     assert(goal != NULL);
-    LOG("Completed goal: " PRIGOAL, PRIGOALF(goal));
+    LOG(TERM_BOLD("Completed goal: ") TERM_GREEN(PRIGOAL), PRIGOALF(goal));
 
     switch (goal->type) {
-    case GOAL_ITEM:
-        LL_EXTRACT(goal->node->node_parent, goal->node);
-        free(goal->node);
+    case GOAL_PICKUP:
+    case GOAL_CHEST:
+        //LL_EXTRACT(goal->node->node_parent, goal->node);
+        //free(goal->node);
         break;
     default:
         break;
     }
 
-    LL_EXTRACT(ap_goal_list, goal);
-    free(goal);
+    LL_EXTRACT(goal);
+    ap_graph_mark_done(&goal->graph);
+    //free(goal);
     if (ap_active_goal == goal)
         ap_active_goal = NULL;
 }
@@ -248,23 +328,15 @@ static void
 ap_goal_fail(struct ap_goal * goal)
 {
     assert(goal != NULL);
-    LOG("Failed goal: " PRIGOAL, PRIGOALF(goal));
+    LOG("Failed goal: " TERM_RED(PRIGOAL), PRIGOALF(goal));
     goal->attempts++;
     if (goal->attempts > 3) {
-        LOG("Permafailing goal: " PRIGOAL, PRIGOALF(goal));
-        LL_EXTRACT(ap_goal_list, goal);
-        free(goal);
+        LOG("Permafailing goal: " TERM_RED(TERM_BOLD(PRIGOAL)), PRIGOALF(goal));
+        LL_EXTRACT(goal);
+        ap_graph_extract(&goal->graph);
     }
     if (ap_active_goal == goal)
         ap_active_goal = NULL;
-}
-
-static int
-ap_plan_goto_node(struct ap_node * node)
-{
-    struct ap_screen * screen = ap_update_map_screen(false);
-    //TODO
-    return -1;
 }
 
 static void
@@ -280,6 +352,7 @@ retry_new_goal:;
     struct ap_goal * min_goal = NULL;
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
         int score = ap_goal_score(goal);
+        goal->last_score = score;
         if (score == GOAL_SCORE_COMPLETE) {
             struct ap_goal * g = goal;
             goal = goal->prev;
@@ -303,7 +376,7 @@ retry_new_goal:;
         return;
     }
 
-    LOG("Active goal: " PRIGOAL, PRIGOALF(min_goal));
+    LOG(TERM_BOLD("Active goal: ") TERM_BLUE(PRIGOAL), PRIGOALF(min_goal));
 
     while (LL_PEEK(ap_task_list) != NULL) {
         free(LL_POP(ap_task_list));
@@ -314,8 +387,13 @@ retry_new_goal:;
     
     // Get to point
     switch (min_goal->type) {
-    case GOAL_ITEM:
+    case GOAL_CHEST:
+    case GOAL_PICKUP:
     case GOAL_EXPLORE:;
+        task = ap_task_prepend(); 
+        task->type = TASK_SET_INVENTORY;
+        task->item = 0x4;
+
         struct ap_node * node = min_goal->node;
         int rc = ap_pathfind_node(node);
         if (rc < 0) {
@@ -352,20 +430,21 @@ retry_new_goal:;
     }
 
     switch (min_goal->type) {
-    case GOAL_ITEM:
-        if (ap_tile_attrs[min_goal->node->tile_attr] & TILE_ATTR_CHST) {
-            task = ap_task_append();
-            task->type = TASK_CHEST;
-            task->node = min_goal->node;
-            snprintf(task->name, sizeof task->name, "item chest");
-        } else {
-            task = ap_task_append();
-            task->type = TASK_POT;
-            task->node = min_goal->node;
-            snprintf(task->name, sizeof task->name, "item pot");
-        }
+    case GOAL_PICKUP:
+        task = ap_task_append();
+        task->type = TASK_LIFT_POT;
+        task->node = min_goal->node;
+        snprintf(task->name, sizeof task->name, "item");
+        break;
+    case GOAL_CHEST:
+        task = ap_task_append();
+        task->type = TASK_OPEN_CHEST;
+        task->node = min_goal->node;
+        snprintf(task->name, sizeof task->name, "chest");
         break;
     case GOAL_EXPLORE:
+        if (min_goal->node->adjacent_direction == 0)
+            break;
         task = ap_task_append(); 
         task->type = TASK_TRANSITION;
         task->node = min_goal->node;
@@ -400,15 +479,31 @@ ap_plan_evaluate(uint16_t * joypad)
         }
         switch (rc) {
         case RC_DONE:
-            LOG("task complete: " PRITASK, PRITASKF(task));
+            LOG("task complete: " TERM_GREEN(PRITASK), PRITASKF(task));
             free(LL_POP(ap_task_list));
             break;
         case RC_FAIL:
-            LOG("task failed: " PRITASK, PRITASKF(task));
+            LOG("task failed: " TERM_RED(PRITASK), PRITASKF(task));
             ap_goal_fail(ap_active_goal);
             break;
         case RC_INPR:
             return;
         }
     }
+}
+
+void
+ap_plan_init()
+{
+    struct ap_goal * goal = NULL;
+
+    item_goal_bombs = goal = ap_goal_append();
+    goal->type = GOAL_ITEM;
+    goal->item = 0x04;
+    snprintf(goal->name, sizeof goal->name, "get: bombs");
+
+    item_goal_flippers = goal = ap_goal_append();
+    goal->type = GOAL_ITEM;
+    goal->item = 0x57;
+    snprintf(goal->name, sizeof goal->name, "get: flippers");
 }

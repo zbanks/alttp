@@ -10,12 +10,19 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     *ap_emu->info_string_ptr = ap_info_string;
 
     if (JOYPAD_TEST(X)) return;
+
+    if (JOYPAD_EVENT(Y)) {
+        LOG("dumping");
+        ap_print_map_screen(NULL);
+    }
     /*
     if (JOYPAD_EVENT(START)) {
         JOYPAD_CLEAR(START);
         if (frame > 60) ap_emu->save("home");
     }
     */
+    *joypad = 0;
+
 // 0x07 In house/dungeon
 // 0x09 In OW
 // 0x0B Overworld Mode (special overworld)
@@ -24,18 +31,12 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     case 0x07:
     case 0x09:
     case 0x0B:
-        break;
     case 0x0E:
-        if (frame % 4 == 0) {
-            JOYPAD_SET(START);
-            JOYPAD_SET(B);
-        } else {
-            JOYPAD_CLEAR(START);
-            JOYPAD_CLEAR(B);
-        }
+        break;
+        //if (frame % 2) JOYPAD_SET(START);
         // fallthrough
     default:
-        INFO("Module Index: %#x", module_index);
+        //INFO("Module Index: %#x %d", module_index, frame);
         return;
     }
 
@@ -74,7 +75,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     } else {
         //LOG("touching_chest: %d", *ap_ram.touching_chest)g;
         if (!JOYPAD_TEST(Y)) {
-            //ap_plan_evaluate(joypad);
+            ap_plan_evaluate(joypad);
         }
     }
 
@@ -89,11 +90,8 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     static uint16_t x = 0;
     if (x++ == 4000) {
         ap_print_map_full();
+        ap_graph_print();
         x = 0;
-    }
-
-    if (JOYPAD_TEST(Y)) {
-        //ap_print_map_screen(NULL);
     }
 
     // sram_overworld_state & 0x2 = bomb open
@@ -103,6 +101,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     } else {
         INFO("Ovrwld: %x St: %2x", *ap_ram.overworld_index, ap_ram.sram_overworld_state[*ap_ram.overworld_index]);
     }
+    //INFO("citem: %#x", *ap_ram.current_item);
 
     //uint8_t *b = ap_emu->base(0x7E001A);
     //INFO_HEXDUMP(b);

@@ -45,11 +45,12 @@
     X(link_direction,       uint8_t,   0x7E002F)   \
     X(link_swordstate,      uint8_t,   0x7E003A)   \
     X(link_state,           uint8_t,   0x7E005D)   \
+    X(link_lower_level,     uint8_t,   0x7E00EE)   \
     X(overworld_index,      uint16_t,  0x7E008A)   \
     X(dungeon_room,         uint16_t,  0x7E00A0)   \
     X(menu_part,            uint8_t,   0x7E00C8)   \
+    X(current_item,         uint8_t,   0x7E0202)   \
     X(room_state,           uint16_t,  0x7E0400)   \
-    X(link_lower_level,     uint8_t,   0x7E00EE)   \
     X(dngn_open_doors,      uint16_t,  0x7E068C)   \
     X(sprite_drop,          uint8_t,   0x7E0CBA)   \
     X(sprite_y_lo,          uint8_t,   0x7E0D00)   \
@@ -95,6 +96,7 @@
     X(ignore_sprites,       uint8_t,   0x7E037B)   \
     X(sram_room_state,      uint16_t,  0x7EF000)   \
     X(sram_overworld_state, uint8_t,   0x7EF280)   \
+    X(inventory_base,       uint8_t,   0x7EF33F)   \
     X(inventory_bombs,      uint8_t,   0x7EF343)   \
     X(health_current,       uint8_t,   0x7EF36D)   \
     X(health_capacity,      uint8_t,   0x7EF36C)   \
@@ -130,11 +132,8 @@ enum {
 TILE_ATTR_LIST
 #undef X
 };
-static const char * const ap_tile_attr_names[] = {
-#define X(d) [CONCAT(TILE_ATTR_, d)] = STRINGIFY(d),
-TILE_ATTR_LIST
-#undef X
-};
+extern const char * const ap_tile_attr_names[];
+const char * ap_tile_attr_name(uint8_t idx);
 
 static const uint16_t ap_tile_attrs[256] = {
     [0x00] = TILE_ATTR_WALK,
@@ -149,8 +148,10 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x1e] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // stairs?
 
     [0x22] = TILE_ATTR_WALK,
-    [0x23] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button
-    [0x24] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button
+    [0x23] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button 0x8000
+    [0x24] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button 0x4000
+    [0x25] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button XXX WILD GUESS
+    [0x26] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button XXX WILD GUESS
 
     [0x27] = 0,              // fence, or hammer peg?
     [0x28] = TILE_ATTR_LDGE, // up
@@ -216,22 +217,22 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x7E] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
     [0x7F] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
 
-    [0x80] = TILE_ATTR_WALK,
-    [0x81] = TILE_ATTR_WALK,
-    [0x82] = TILE_ATTR_WALK, // locked door?
-    [0x83] = TILE_ATTR_WALK,
-    [0x84] = TILE_ATTR_WALK,
-    [0x85] = TILE_ATTR_WALK, // locked door?
-    [0x86] = TILE_ATTR_WALK,
-    [0x87] = TILE_ATTR_WALK,
-    [0x88] = TILE_ATTR_WALK,
-    [0x89] = TILE_ATTR_WALK,
-    [0x8A] = TILE_ATTR_WALK,
-    [0x8B] = TILE_ATTR_WALK,
-    [0x8C] = TILE_ATTR_WALK,
-    [0x8D] = TILE_ATTR_WALK,
-    [0x8E] = TILE_ATTR_WALK,
-    [0x8F] = TILE_ATTR_WALK,
+    [0x80] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x81] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x82] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // locked door?
+    [0x83] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x84] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x85] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // locked door?
+    [0x86] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x87] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x88] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x89] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x8A] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x8B] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x8C] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x8D] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x8E] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x8F] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
 
     [0x90] = TILE_ATTR_WALK,
     [0x91] = TILE_ATTR_WALK,
@@ -249,23 +250,18 @@ static const uint16_t ap_tile_attrs[256] = {
     [0xA4] = TILE_ATTR_WALK,
     [0xA5] = TILE_ATTR_WALK,
 
+    [0xF0] = TILE_ATTR_DOOR, // Locked door, 0x8000?
+    [0xF1] = TILE_ATTR_DOOR, // Locked door, 0x4000?
+    [0xF2] = TILE_ATTR_DOOR, // Locked door
+    [0xF3] = TILE_ATTR_DOOR, // Locked door
+    [0xF4] = TILE_ATTR_DOOR, // Locked door
+    [0xF5] = TILE_ATTR_DOOR, // Locked door
+    [0xF6] = TILE_ATTR_DOOR, // Locked door
+    [0xF7] = TILE_ATTR_DOOR, // Locked door
     [0xF8] = TILE_ATTR_DOOR, // Locked door, 0x8000?
     // Fake/unknown
     [0xFF] = TILE_ATTR_WALK,
 };
-
-static const char * ap_tile_attr_name(uint8_t idx) {
-    uint16_t attr = ap_tile_attrs[idx];
-    static char sbuf[1024];
-    char * buf = sbuf;
-#define X(d) if (attr & CONCAT(TILE_ATTR_, d)) { \
-    if (buf != sbuf) { *buf++ = '|'; } \
-    buf += sprintf(buf, STRINGIFY(d)); \
-    }
-TILE_ATTR_LIST
-#undef X
-    return sbuf;
-}
 
 enum ap_link_state {
     LINK_STATE_GROUND = 0x0,
@@ -325,11 +321,10 @@ enum {
 SPRITE_ATTR_LIST
 #undef X
 };
-static const char * const ap_sprite_attr_names[] = {
-#define X(d) [CONCAT(SPRITE_ATTR_, d)] = STRINGIFY(d),
-SPRITE_ATTR_LIST
-#undef X
-};
+
+extern const char * const ap_sprite_attr_names[];
+const char * ap_sprite_attr_name(uint8_t idx);
+void ap_sprites_print();
 
 static const uint16_t ap_sprite_attrs[256] = {
     [0x00] = SPRITE_ATTR_ENMY, // Raven
@@ -582,7 +577,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xE9] = 0, // Magic Shop dude / His items, including the magic powder
     [0xEA] = SPRITE_ATTR_ITEM, // Full Heart Container
     [0xEB] = SPRITE_ATTR_ITEM, // Quarter Heart Container
-    [0xEC] = SPRITE_ATTR_BLOK, // Bushes
+    [0xEC] = 0, // Bushes or pot, picked up/thrown
     [0xED] = 0, // Cane of Somaria Platform
     [0xEE] = SPRITE_ATTR_BLOK, // Movable Mantle (in Hyrule Castle)
     [0xEF] = 0, // Cane of Somaria Platform (same as 0xED but this index is not used)
@@ -591,19 +586,6 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xF1] = 0, // Cane of Somaria Platform (same as 0xED but this index is not used)
     [0xF2] = SPRITE_ATTR_BLOK, // Medallion Tablet
 };
-
-static const char * ap_sprite_attr_name(uint8_t idx) {
-    uint16_t attr = ap_sprite_attrs[idx];
-    static char sbuf[1024];
-    char * buf = sbuf;
-#define X(d) if (attr & CONCAT(SPRITE_ATTR_, d)) { \
-    if (buf != sbuf) { *buf++ = '|'; } \
-    buf += sprintf(buf, STRINGIFY(d)); \
-    }
-SPRITE_ATTR_LIST
-#undef X
-    return sbuf;
-}
 
 // module_index
 // 0x00 Nintendo presents screen + Title screen
@@ -634,3 +616,25 @@ SPRITE_ATTR_LIST
 // 0x19 Triforce Room scene
 // 0x1A End sequence
 // 0x1B Screen to select where to start from (House, sanctuary, etc.)
+
+// current_item (guessing from inventory layout, * are confirmed)
+// 0x01 Bow
+// 0x02 Boomerang
+// 0x03 Hookshot
+// 0x04 Bombs *
+// 0x05 Powder *
+// 0x06 Fire rod
+// 0x07 Ice rod
+// 0x08 Bombos
+// 0x09 Ether
+// 0x0a Quake
+// 0x0b Lamp
+// 0x0c Hammer *
+// 0x0d Flute *
+// 0x0e Net
+// 0x0f Book of Mudora *
+// 0x10 Bottles?
+// 0x11 Red cane
+// 0x12 Blue cane
+// 0x13 Magic cape
+// 0x14 Mirror *

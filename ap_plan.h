@@ -1,10 +1,19 @@
 #pragma once
 #include "ap_macro.h"
+#include "ap_graph.h"
 
 #define AP_GOAL_TYPE_LIST \
     X(NONE) \
-    X(ITEM) \
+    X(PICKUP) \
+    X(CHEST) \
     X(EXPLORE) \
+    X(ITEM) \
+
+enum ap_goal_type {
+#define X(type) CONCAT(GOAL_, type),
+AP_GOAL_TYPE_LIST
+#undef X
+};
 
 extern const char * const ap_goal_type_names[];
 struct ap_goal;
@@ -12,20 +21,24 @@ struct ap_goal {
     struct ap_goal * next;
     struct ap_goal * prev;
 
-    enum ap_goal_type {
-#define X(type) CONCAT(GOAL_, type),
-AP_GOAL_TYPE_LIST
-#undef X
-    } type;
+    enum ap_goal_type type;
     char name[32];
 
     struct ap_node * node;
+    uint8_t item;
     int attempts;
+    int last_score;
+
+    struct ap_graph graph;
 };
 extern struct ap_goal * ap_goal_list;
 
-#define GOAL_SCORE_IMPOSSIBLE INT_MAX
-
+static struct ap_goal *
+ap_goal_from_graph(struct ap_graph * graph) {
+    uintptr_t p = (uintptr_t) graph;
+    p -= (uintptr_t) &((struct ap_goal *) 0)->graph;
+    return (struct ap_goal *) p;
+}
 
 #define PRIGOAL "%s %s [node=%s]"
 #define PRIGOALF(g) ap_goal_type_names[(g)->type], (g)->name, ((g)->node ? (g)->node->name : "(null)")
@@ -34,29 +47,29 @@ void
 ap_print_goals();
 
 struct ap_goal *
-ap_goal_append();
-
-struct ap_goal *
 ap_goal_add(enum ap_goal_type type, struct ap_node * node);
 
 #define AP_TASK_TYPE_LIST \
     X(NONE) \
     X(GOTO_POINT) \
     X(TRANSITION) \
-    X(CHEST) \
-    X(POT) \
+    X(OPEN_CHEST) \
+    X(LIFT_POT) \
+    X(SET_INVENTORY) \
 
+enum ap_task_type {
+#define X(type) CONCAT(TASK_, type),
+AP_TASK_TYPE_LIST
+#undef X
+};
 extern const char * const ap_task_type_names[];
+
 struct ap_task;
 struct ap_task {
     struct ap_task * next;
     struct ap_task * prev;
 
-    enum ap_task_type {
-#define X(type) CONCAT(TASK_, type),
-AP_TASK_TYPE_LIST
-#undef X
-    } type;
+    enum ap_task_type type;
     char name[32];
 
     int timeout;
@@ -64,14 +77,21 @@ AP_TASK_TYPE_LIST
 
     struct ap_node * node;
     uint8_t direction;
+    uint8_t item;
 };
 extern struct ap_task * ap_task_list;
 
-#define PRITASK "%s %s [node=%s]"
-#define PRITASKF(t) ap_task_type_names[(t)->type], (t)->name, ((t)->node ? (t)->node->name : "(null)")
+const char *
+ap_print_task(const struct ap_task * task);
+
+#define PRITASK "%s"
+#define PRITASKF(t) ap_print_task(t)
 
 void
 ap_print_tasks();
 
 void
 ap_plan_evaluate(uint16_t * joypad);
+
+void
+ap_plan_init();

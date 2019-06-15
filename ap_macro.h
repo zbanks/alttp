@@ -53,7 +53,7 @@ extern bool ap_debug;
     (list)->next->prev = (list); \
     (n == (list)) ? NULL : n; })
 
-#define LL_EXTRACT(list, node) ({ \
+#define LL_EXTRACT(node) ({ \
     (node)->prev->next = (node)->next; \
     (node)->next->prev = (node)->prev; \
     })

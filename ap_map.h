@@ -47,7 +47,9 @@ DIR_LIST
 #define NODE_TYPE_LIST  \
     X(NONE) \
     X(ITEM) \
+    X(CHEST) \
     X(TRANSITION) \
+    X(INTERIOR_DOOR) \
     X(SWITCH) \
 
 struct ap_screen;
