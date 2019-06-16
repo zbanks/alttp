@@ -64,6 +64,8 @@ struct ap_node {
     uint8_t adjacent_direction;
     //struct ap_screen ** adjacent_screen;
     struct ap_node * adjacent_node;
+    struct xy locked_xy; // door is locked if this is 0xFx not 0x82
+    struct ap_node * lock_node;
 
     enum ap_node_type {
 #define X(type) CONCAT(NODE_, type),
@@ -72,6 +74,7 @@ NODE_TYPE_LIST
     } type;
     uint8_t tile_attr;
     bool _reachable;
+    bool _debug_blocked;
     char name[32];
 
     struct ap_node_pgsearch {
@@ -125,3 +128,6 @@ ap_pathfind_node(struct ap_node * node);
 
 int
 ap_map_record_transition_from(struct ap_node * src_node);
+
+bool
+ap_node_islocked(struct ap_node * node);

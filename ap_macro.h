@@ -22,6 +22,7 @@
 #define TERM_CYAN(x)    "\x1b[36m" x "\x1b[0m"
 
 #define LOG(fmt, ...) printf("["__FILE__ ":%s:%d] " fmt "\n", __func__, __LINE__, ## __VA_ARGS__)
+#define LOGB(fmt, ...) LOG(TERM_BOLD(fmt), ## __VA_ARGS__)
 #define DEBUG(...) ({ if(ap_debug){LOG(__VA_ARGS__);} })
 #define INFO_STRING_SIZE 256
 #define INFO(...) snprintf(ap_info_string, INFO_STRING_SIZE, __VA_ARGS__)

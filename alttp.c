@@ -9,12 +9,12 @@ void
 ap_tick(uint32_t frame, uint16_t * joypad) {
     *ap_emu->info_string_ptr = ap_info_string;
 
-    if (JOYPAD_TEST(X)) return;
 
     if (JOYPAD_EVENT(Y)) {
         LOG("dumping");
         ap_print_map_screen(NULL);
     }
+    if (JOYPAD_TEST(X)) return;
     /*
     if (JOYPAD_EVENT(START)) {
         JOYPAD_CLEAR(START);

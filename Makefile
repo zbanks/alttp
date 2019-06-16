@@ -18,7 +18,7 @@ DEPS = $(OBJECTS:.o=build/.d)
 -include $(DEPS)
 
 # compile and generate dependency info;
-build/%.o: %.c
+build/%.o: %.c | $(wildcard *.h)
 	$(CC) -c $(CFLAGS) $*.c -o build/$*.o
 	$(CC) -MM $(CFLAGS) $*.c > build/$*.d
 

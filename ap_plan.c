@@ -98,10 +98,11 @@ ap_print_task(const struct ap_task * task)
     case TASK_OPEN_CHEST:
     case TASK_LIFT_POT:
     case TASK_TRANSITION:
-        buf += sprintf(buf, "[node=%s]", (task->node ? task->node->name : "(null)"));
+    case TASK_STEP_OFF_SWITCH:
+        buf += sprintf(buf, " [node=%s]", (task->node ? task->node->name : "(null)"));
         break;
     case TASK_SET_INVENTORY:
-        buf += sprintf(buf, "[item=%#x]", task->item);
+        buf += sprintf(buf, " [item=%#x]", task->item);
         break;
     case TASK_NONE:
         break;
@@ -128,7 +129,34 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
 {
     int rc;
     struct ap_screen * screen = ap_update_map_screen(false);
+    if (task->node != NULL && ap_node_islocked(task->node)) {
+        if (task->node->lock_node == NULL)
+            return RC_FAIL;
+        // Prepend an unlock task
+        struct ap_task * new_task = ap_task_prepend(); 
+        new_task->type = TASK_GOTO_POINT;
+        new_task->node = task->node->lock_node;
+        snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
+        // Maybe we need to step off first
+        new_task = ap_task_prepend(); 
+        new_task->type = TASK_STEP_OFF_SWITCH;
+        new_task->node = task->node->lock_node;
+        snprintf(new_task->name, sizeof new_task->name, "step off");
+        return RC_INPR; // XXX should there be RC_RTRY?
+    }
     switch (task->type) {
+    case TASK_STEP_OFF_SWITCH:
+        switch (task->state) {
+        case 0:
+            task->timeout = 32;
+            task->state++;
+        case 1:
+            if (!*ap_ram.link_on_switch)
+                return RC_DONE;
+            JOYPAD_SET(LEFT); // FIXME
+            return RC_INPR;
+        }
+        break;
     case TASK_GOTO_POINT:
         switch (task->state) {
         case 0:
@@ -328,10 +356,10 @@ static void
 ap_goal_fail(struct ap_goal * goal)
 {
     assert(goal != NULL);
-    LOG("Failed goal: " TERM_RED(PRIGOAL), PRIGOALF(goal));
+    LOG(TERM_BOLD("Failed goal: ") TERM_RED(PRIGOAL), PRIGOALF(goal));
     goal->attempts++;
     if (goal->attempts > 3) {
-        LOG("Permafailing goal: " TERM_RED(TERM_BOLD(PRIGOAL)), PRIGOALF(goal));
+        LOG(TERM_BOLD("Permafailing goal: ") TERM_RED(TERM_BOLD(PRIGOAL)), PRIGOALF(goal));
         LL_EXTRACT(goal);
         ap_graph_extract(&goal->graph);
     }
@@ -390,9 +418,10 @@ retry_new_goal:;
     case GOAL_CHEST:
     case GOAL_PICKUP:
     case GOAL_EXPLORE:;
-        task = ap_task_prepend(); 
-        task->type = TASK_SET_INVENTORY;
-        task->item = 0x4;
+        // For debugging: set inventory
+        //task = ap_task_prepend(); 
+        //task->type = TASK_SET_INVENTORY;
+        //task->item = 0x4;
 
         struct ap_node * node = min_goal->node;
         int rc = ap_pathfind_node(node);

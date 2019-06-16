@@ -46,11 +46,14 @@
     X(link_swordstate,      uint8_t,   0x7E003A)   \
     X(link_state,           uint8_t,   0x7E005D)   \
     X(link_lower_level,     uint8_t,   0x7E00EE)   \
+    X(link_on_switch,       uint16_t,  0x7E0430)   \
     X(overworld_index,      uint16_t,  0x7E008A)   \
     X(dungeon_room,         uint16_t,  0x7E00A0)   \
     X(menu_part,            uint8_t,   0x7E00C8)   \
     X(current_item,         uint8_t,   0x7E0202)   \
     X(room_state,           uint16_t,  0x7E0400)   \
+    X(room_layout,          uint8_t,   0x7E040E)   \
+    X(room_trap_doors,      uint16_t,  0x7E0468)   \
     X(dngn_open_doors,      uint16_t,  0x7E068C)   \
     X(sprite_drop,          uint8_t,   0x7E0CBA)   \
     X(sprite_y_lo,          uint8_t,   0x7E0D00)   \
@@ -219,7 +222,7 @@ static const uint16_t ap_tile_attrs[256] = {
 
     [0x80] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
     [0x81] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x82] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // locked door?
+    [0x82] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // lockable door?
     [0x83] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
     [0x84] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
     [0x85] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // locked door?
@@ -261,6 +264,24 @@ static const uint16_t ap_tile_attrs[256] = {
     [0xF8] = TILE_ATTR_DOOR, // Locked door, 0x8000?
     // Fake/unknown
     [0xFF] = TILE_ATTR_WALK,
+};
+
+enum ap_room_layout {
+    // Cells are laid out as follows:
+    // A B
+    // C D
+    // Undercores separate rooms; ABCD is 1 2x2 room; A_B_C_D is 4 1x1 rooms
+    ROOM_LAYOUT_A_B_C_D = 0,
+    ROOM_LAYOUT_AC_BD = 1,
+    ROOM_LAYOUT_A_BD_C = 2,
+    ROOM_LAYOUT_AC_B_D = 3,
+    ROOM_LAYOUT_AB_CD = 4,
+    ROOM_LAYOUT_A_B_CD = 5,
+    ROOM_LAYOUT_AB_C_D = 6,
+    ROOM_LAYOUT_ABCD = 7,
+
+    //DUNGEON_LAYOUT_RIGHT = 0x1,
+    //DUNGEON_LAYOUT_BOTTOM = 0x2,
 };
 
 enum ap_link_state {

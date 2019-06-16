@@ -25,6 +25,15 @@ NODE_TYPE_LIST
 static int
 ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy destination_tl, struct xy destination_br, bool commit);
 
+static struct xy
+ap_box_edge(struct xy tl, struct xy br, int dir) {
+    // Step `count` pixels in direction `dir` from the bounding box `tl,br`
+    struct xy dxy = dir_dxy[dir];
+    return XY(
+        ((dir_dx[dir] <= 0) ? tl.x : br.x),
+        ((dir_dy[dir] <= 0) ? tl.y : br.y));
+}
+
 struct xy
 ap_link_xy()
 {
@@ -64,10 +73,27 @@ ap_map_bounds(struct xy * topleft, struct xy * bottomright)
     if (*ap_ram.in_building) {
         struct xy link = ap_link_xy();
         link.y = CAST16(link.y - 8);
-        topleft->x = (uint16_t) (link.x & ~1023);
-        topleft->y = (uint16_t) (link.y & ~511);
-        bottomright->x = (uint16_t) (topleft->x | 1023);
-        bottomright->y = (uint16_t) (topleft->y | 511);
+        uint8_t layout = *ap_ram.room_layout;
+        struct xy size;
+        bool in_right = (link.x & 0x100) != 0;
+        bool in_bottom = (link.x & 0x100) != 0;
+        switch (layout >> 2) {
+        //case 3: size = XY(0x200, 0x100); break;
+        //case 4: size = XY(0x200, 0x100); break;
+        case ROOM_LAYOUT_A_B_C_D: size = XY(0x100, 0x100); break;
+        case ROOM_LAYOUT_AC_BD: size = XY(0x100, 0x200); break;
+        case ROOM_LAYOUT_AB_CD: size = XY(0x200, 0x100); break;
+        case ROOM_LAYOUT_ABCD: size = XY(0x200, 0x200); break;
+        case ROOM_LAYOUT_A_BD_C: size = XY(0x100, (in_right) ? 0x200 : 0x100); break;
+        case ROOM_LAYOUT_AC_B_D: size = XY(0x100, (in_right) ? 0x100 : 0x200); break;
+        case ROOM_LAYOUT_A_B_CD: size = XY(0x100, (in_bottom) ? 0x200 : 0x100); break;
+        case ROOM_LAYOUT_AB_C_D: size = XY(0x100, (in_bottom) ? 0x100 : 0x200); break;
+        default: LOG("new layout: %x", layout >> 2); assert_bp(false); size = XY(0x200, 0x200); break;
+        }
+        size = XYOP1(size, - 1);
+        struct xy mask = XY(~size.x, ~size.y);
+        *topleft = XYOP2(link, &, mask);
+        *bottomright = XYOP2(*topleft, +, size);
     } else {
         topleft->x = (uint16_t) (*ap_ram.map_x_offset * 8);
         topleft->y = (uint16_t) (*ap_ram.map_y_offset);
@@ -300,6 +326,11 @@ ap_print_map_screen(struct ap_screen * screen)
                 if (goal->node == NULL) {
                     continue;
                 }
+                if (XYIN(xy, goal->node->locked_xy, XYOP1(goal->node->locked_xy, +7))) {
+                    fprintf(mapf, TERM_CYAN(TERM_BOLD("%02x ")), tile_attr);
+                    fprintf(mapimg, "%c%c%c", 64, 64, 0);
+                    goto next_point;
+                }
                 if (XYIN(xy, goal->node->tl, goal->node->br)) {
                     fprintf(mapf, TERM_YELLOW("%02x "), tile_attr);
                     fprintf(mapimg, "%c%c%c", 255, 255 - goal->attempts * 64, 0);
@@ -307,6 +338,11 @@ ap_print_map_screen(struct ap_screen * screen)
                 }
             }
             for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+                if (XYIN(xy, node->locked_xy, XYOP1(node->locked_xy, +7))) {
+                    fprintf(mapf, TERM_CYAN(TERM_BOLD("%02x ")), tile_attr);
+                    fprintf(mapimg, "%c%c%c", 64, 64, 0);
+                    goto next_point;
+                }
                 if (XYIN(xy, node->tl, node->br)) {
                     fprintf(mapf, TERM_RED(TERM_BOLD("%02x ")), tile_attr);
                     if (node->adjacent_node == NULL) {
@@ -623,7 +659,8 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             state[y][x].tile_attrs = tile;
             state[y][x].raw_tile = raw_tile;
             uint8_t ledge_mask = 0;
-            if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
+            //if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
+            if (tile & (TILE_ATTR_WALK)) {
                 cost = 0;
             } else if (tile & TILE_ATTR_LDGE) {
                 cost = (1 << 20); // calculated at search time
@@ -632,7 +669,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 ledge_mask = 1ul << (raw_tile & 0x7);
             } else if (tile & TILE_ATTR_LFT0) {
                 cost = 40;
-            } else if (XYIN(mapxy, dst_tl, dst_br)) {
+            } else if (XYIN(mapxy, destination_tl, destination_br)) {
                 cost = 0;
             } else if (raw_tile == 0x1C) {
                 cost = 1000;
@@ -755,6 +792,8 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             // Handle stairs
             if (state[node.y][node.x].raw_tile == 0x3E ||
                 state[node.y][node.x].raw_tile == 0x1E) {
+                // FIXME: This needs to change now that we've refactored
+                // BG1/BG2  to be different screens
                 neighbor.x ^= 0x200 / 8;
                 //neighbor = XYOP2(neighbor, +, dir_dxy[i]);
                 //neighbor = XYOP2(neighbor, +, dir_dxy[i]);
@@ -933,7 +972,7 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         node->pgsearch.iter++;
         if (node == destination)
             goto search_done;
-        assert(node->type == NODE_TRANSITION || node == start_node);
+        assert(node->type == NODE_TRANSITION || node->type == NODE_INTERIOR_DOOR || node == start_node);
 
         // Try going to an adjacent screen
         if (node->adjacent_node != NULL) {
@@ -955,7 +994,9 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         for (struct ap_node * adj_node = node->screen->node_list->next; adj_node != node->screen->node_list; adj_node = adj_node->next) {
             if (adj_node == node)
                 continue;
-            if (!(adj_node == destination || adj_node->type == NODE_TRANSITION))
+            if (adj_node->_debug_blocked)
+                continue;
+            if (!(adj_node == destination || adj_node->type == NODE_TRANSITION || adj_node->type == NODE_INTERIOR_DOOR))
                 continue;
             if (adj_node->pgsearch.iter == iter + 1)
                 continue;
@@ -1108,9 +1149,13 @@ ap_print_state()
             n.tl = XYOP2(node->tl, -, screen->tl);
             n.br = XYOP2(node->br, -, screen->tl);
             fprintf(screenf, "    node: %s " PRIBBWH " ", node->name, PRIBBWHF(n));
-            if (node->type == NODE_TRANSITION) {
+            if (node->type == NODE_TRANSITION || node->type == NODE_INTERIOR_DOOR) {
                 if (node->adjacent_node) {
-                    fprintf(screenf, "to screen %s node %s", node->adjacent_node->screen->name, node->adjacent_node->name);
+                    if (node->type == NODE_INTERIOR_DOOR) {
+                        fprintf(screenf, "to interior node %s", node->adjacent_node->name);
+                    } else {
+                        fprintf(screenf, "to screen %s node %s", node->adjacent_node->screen->name, node->adjacent_node->name);
+                    }
                 } else {
                     fprintf(screenf, "unmapped");
                 }
@@ -1175,6 +1220,49 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
     LL_PUSH(screen->node_list, new_node);
     LOG("attached node %s", new_node->name);
 
+    // Merge NODE_INTERIOR_DOOR adjacencies
+    if (new_node->type == NODE_INTERIOR_DOOR && new_node->adjacent_node == NULL) {
+        for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+            if (node->adjacent_node != NULL)
+                continue;
+            if (node->type != NODE_INTERIOR_DOOR)
+                continue;
+            if (node->adjacent_direction != dir_opp[new_node->adjacent_direction])
+                continue;
+            if (XYL1DIST(
+                    ap_box_edge(node->tl, node->br, node->adjacent_direction),
+                    ap_box_edge(new_node->tl, new_node->br, new_node->adjacent_direction)
+                ) > 16)
+                continue;
+            //LOG("Link adjacent interior nodes: %s <-> %s", node->name, new_node->name);
+            node->adjacent_node = new_node;
+            new_node->adjacent_node = node;
+            break;
+        }
+    }
+    // XXX This needs to be refactored to pair switches w/ doors
+    if (new_node->type == NODE_SWITCH) {
+        // Assign all doors to this switch
+        for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+            if (node->lock_node == NULL && !XYEQ(node->locked_xy, XY(0, 0))) {
+                LOGB("Assigning switch %s to unlock door %s", new_node->name, node->name);
+                node->lock_node = new_node;
+                break;
+            }
+        }
+    }
+    if (!XYEQ(new_node->locked_xy, XY(0, 0))) {
+        // Assign the first switch we find to this door
+        for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+            if (node->type == NODE_SWITCH) {
+                LOGB("Assigning switch %s to unlock door %s", node->name, new_node->name);
+                new_node->lock_node = node;
+                break;
+            }
+        }
+        LOGB("Unlock door %s = %p", new_node->name, new_node->lock_node);
+    }
+
     // Add goals
     switch (new_node->type) {
     case NODE_TRANSITION:
@@ -1193,6 +1281,10 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
     case NODE_NONE:
     default:
         ;
+    }
+
+    if (strcmp(new_node->name, "0x198A D 4") == 0) {
+        new_node->_debug_blocked = true;
     }
 
     *new_node_p = NONNULL(calloc(1, sizeof **new_node_p));
@@ -1225,6 +1317,7 @@ ap_update_map_screen_nodes()
         case NODE_CHEST:
         case NODE_ITEM:
         case NODE_TRANSITION:
+        case NODE_INTERIOR_DOOR:
         case NODE_NONE:
         default:;
         }
@@ -1251,6 +1344,7 @@ ap_update_map_screen(bool force)
         LL_INIT(screen->node_list);
         snprintf(screen->name, sizeof screen->name, PRIXYV " x " PRIXYV, PRIXYVF(tl), PRIXYVF(br));
 
+        LOG(TERM_BOLD("Screen size: " PRIXY), PRIXYF(XYOP1(XYOP2(br, -, tl), / 0x100 + 1)));
         struct xy xy;
         for (xy.y = tl.y; xy.y < br.y; xy.y += 0x100) {
             for (xy.x = tl.x; xy.x < br.x; xy.x += 0x100) {
@@ -1267,28 +1361,36 @@ ap_update_map_screen(bool force)
         new_node = NONNULL(calloc(1, sizeof *new_node));
 
     //uint16_t walk_mask = TILE_ATTR_WALK | TILE_ATTR_SWIM;
-    uint16_t walk_mask = TILE_ATTR_WALK;
-    const uint8_t dirs[9] = {
+    uint16_t walk_mask = TILE_ATTR_WALK | TILE_ATTR_DOOR;
+    const uint8_t dirs[12] = {
+        // Top, Botton, Left, Right edges
         DIR_U, DIR_D, DIR_L, DIR_R,
+        // Right & Left edges of BG split 
         DIR_R, DIR_L,
-        DIR_R, DIR_R, DIR_U,
+        // Top & Bottom edges of middle across split
+        DIR_U, DIR_D,
+        // Right & Left edges of middle left vert, Right & Left edges of middle right vert
+        DIR_L, DIR_R, DIR_R, DIR_L,
     };
-    const struct xy xy_init[9] = {
+    const struct xy xy_init[12] = {
         tl, XY(tl.x, br.y & ~7), tl, XY(br.x & ~7, tl.y),
-        XY(tl.x | 0x1FF, tl.y), XY(tl.x | 0x200, tl.y),
-        XY(tl.x | 0x0FF, tl.y), XY(tl.x | 0x2FF, tl.y), XY(tl.x, tl.y | 0x0FF),
+        XY(tl.x | 0x1F8, tl.y), XY(tl.x | 0x200, tl.y),
+        XY(tl.x, tl.y | 0x0F8), XY(tl.x, tl.y | 0x100),
+        XY(tl.x | 0x0F8, tl.y), XY(tl.x | 0x100, tl.y), XY(tl.x | 0x2F8, tl.y), XY(tl.x | 0x300, tl.y),
     };
-    const struct xy xy_step[9] = {
+    const struct xy xy_step[12] = {
         dir_dxy[DIR_R], dir_dxy[DIR_R], dir_dxy[DIR_D], dir_dxy[DIR_D],
         dir_dxy[DIR_D], dir_dxy[DIR_D],
-        dir_dxy[DIR_D], dir_dxy[DIR_D], dir_dxy[DIR_R],
+        dir_dxy[DIR_R], dir_dxy[DIR_R],
+        dir_dxy[DIR_D], dir_dxy[DIR_D], dir_dxy[DIR_D], dir_dxy[DIR_D],
     };
-    uint16_t masks[9] = {
+    uint16_t masks[12] = {
         walk_mask, walk_mask, walk_mask, walk_mask,
         walk_mask, walk_mask,
-        TILE_ATTR_DOOR, TILE_ATTR_DOOR, TILE_ATTR_DOOR,
+        TILE_ATTR_DOOR, TILE_ATTR_DOOR,
+        TILE_ATTR_DOOR, TILE_ATTR_DOOR, TILE_ATTR_DOOR, TILE_ATTR_DOOR,
     };
-    const uint8_t dircount = (tl.x >= 0x4000) ? 9 : 4;
+    const uint8_t dircount = (tl.x >= 0x4000) ? 4 /* 12 */: 4;
     //uint8_t f = *ap_ram.in_building ? 6 : 2;
     uint8_t f = 2;
 
@@ -1299,56 +1401,47 @@ ap_update_map_screen(bool force)
         size_t size = 0;
 
         for (struct xy xy = xy_init[k]; XYIN(xy, tl, br); xy = XYOP2(xy, +, XYOP1(xy_step[k], * 8))) {
-            bool can_walk = true;
-            if (xy.x >= 0x4000 && (ap_map_attr(xy) == 0x00 || ap_map_attr(xy) == 0x1c)) {
-                // inside, border 0 or 1c is just empty
-                // you could walk there, but you definitely can't get there
-                can_walk = false;
-            }
-            for (int8_t j = 0; j < f + 2; j++) {
-                struct xy lxy = XYOP2(xy, -, XYOP1(dir_dxy[i], * 8 * j));
-                if (!(ap_tile_attrs[ap_map_attr(lxy)] & masks[i])) {
+            for (; XYIN(xy, tl, br); xy = XYOP2(xy, +, XYOP1(xy_step[k], * 8))) {
+                bool can_walk = true;
+                if (xy.x >= 0x4000 && (ap_map_attr(xy) == 0x00 || ap_map_attr(xy) == 0x1c)) {
+                    // inside, border 0 or 1c is just empty
+                    // you could walk there, but you definitely can't get there
                     can_walk = false;
+                }
+                for (int8_t j = 0; j < f + 2; j++) {
+                    struct xy lxy = XYOP2(xy, -, XYOP1(dir_dxy[i], * 8 * j));
+                    if (!(ap_tile_attrs[ap_map_attr(lxy)] & masks[k])) {
+                        can_walk = false;
+                        break;
+                    }
+                }
+                if (can_walk) {
+                    new_end = XYOP2(xy, -, XYOP1(dir_dxy[i], * 8 * (f + 1)));
+                    for (int8_t j = f + 1; j < f + 8; j++) {
+                        struct xy lxy = XYOP2(new_end, -, XYOP1(dir_dxy[i], * 8));
+                        uint8_t attr = ap_map_attr(lxy);
+                        // 0x80 through 0x9F are walkways between rooms
+                        // 0xF0 through 0xF8 are locked doors?
+                        if (attr < 0x80)
+                            break;
+                        else if (attr > 0x9F && attr < 0xF0)
+                            break;
+                        else if (attr > 0xF8)
+                            break;
+                        new_end = lxy;
+                    }
+                    if (size == 0) {
+                        //new_start = XYOP2(xy, -, XYOP1(dir_dxy[i], * 8 * f));
+                        new_start = xy;
+                    }
+                    size++;
+                } else if (size < 2) {
+                    new_start = new_end = XY(0, 0);
+                    size = 0;
+                } else {
                     break;
                 }
             }
-            if (can_walk) {
-                new_end = XYOP2(xy, -, XYOP1(dir_dxy[i], * 8 * (f + 1)));
-                for (int8_t j = f + 1; j < f + 8; j++) {
-                    struct xy lxy = XYOP2(new_end, -, XYOP1(dir_dxy[i], * 8));
-                    // 0x80 through 0x9F are walkways between rooms
-                    if ((ap_map_attr(lxy) & 0xE0) != 0x80)
-                        break;
-                    new_end = lxy;
-                }
-                if (size == 0) {
-                    //new_start = XYOP2(xy, -, XYOP1(dir_dxy[i], * 8 * f));
-                    new_start = xy;
-                }
-                size++;
-            } else if (size < 2) {
-                new_start = new_end = XY(0, 0);
-                size = 0;
-            } else {
-                new_node->tl = XYFN2(MIN, new_start, new_end);
-                new_node->br = XYFN2(MAX, new_start, new_end);
-                new_node->br = XYOP1(new_node->br, + 7);
-                if (k < 6) {
-                    new_node->type = NODE_TRANSITION;
-                    new_node->adjacent_direction = i;
-                } else {
-                    new_node->type = NODE_INTERIOR_DOOR;
-                    new_node->adjacent_direction = 0;
-                }
-                new_node->tile_attr = ap_map_attr(new_node->tl);
-                //new_node->adjacent_screen = &map_screens[XYMAPSCREEN(XYOP2(new_node->tl, +, XYOP1(dir_dxy[i], * 0x100)))];
-                snprintf(new_node->name, sizeof new_node->name, "0x%02zX %s %d", index, dir_names[i], ++new_node_count);
-                ap_screen_commit_node(screen, &new_node);
-                new_start = new_end = XY(0, 0);
-                size = 0;
-            }
-        }
-        if (size >= 2) {
             new_node->tl = XYFN2(MIN, new_start, new_end);
             new_node->br = XYFN2(MAX, new_start, new_end);
             new_node->br = XYOP1(new_node->br, + 7);
@@ -1357,13 +1450,22 @@ ap_update_map_screen(bool force)
                 new_node->adjacent_direction = i;
             } else {
                 new_node->type = NODE_INTERIOR_DOOR;
-                new_node->adjacent_direction = 0;
+                new_node->adjacent_direction = i;
             }
-            //new_node->tile_attr = 0; // not quite true
-            new_node->tile_attr = ap_map_attr(new_node->tl);
+            new_node->tile_attr = ap_map_attr(ap_box_edge(new_node->tl, new_node->br, i));
+            new_node->locked_xy = XY(0, 0);
+            if (new_node->tile_attr == 0x82) { // locked door
+                new_node->locked_xy = ap_box_edge(new_node->tl, new_node->br, dir_opp[i]);
+                new_node->locked_xy = XYOP1(new_node->locked_xy, &~7);
+                uint8_t attr = ap_map_attr(new_node->locked_xy);
+                LOG("New node tl: " PRIXY "; lock: " PRIXY "; attr:%#x", PRIXYF(new_node->tl), PRIXYF(new_node->locked_xy), attr);
+            }
+
             //new_node->adjacent_screen = &map_screens[XYMAPSCREEN(XYOP2(new_node->tl, +, XYOP1(dir_dxy[i], * 0x100)))];
-            snprintf(new_node->name, sizeof new_node->name, "0x%02zX %s %d", index, dir_names[i], ++new_node_count);
+            snprintf(new_node->name, sizeof new_node->name, "0x%02zX %s %d%s", index, dir_names[i], ++new_node_count, XYEQ(new_node->locked_xy, XY(0, 0)) ? "" : " l");
             ap_screen_commit_node(screen, &new_node);
+            new_start = new_end = XY(0, 0);
+            size = 0;
         }
     }
     if (!*ap_ram.in_building) {
@@ -1441,6 +1543,7 @@ ap_update_map_screen(bool force)
                     snprintf(new_node->name, sizeof new_node->name, "chest 0x%02x %s", attr, attr_name);
                 } else if (ap_tile_attrs[attr] & TILE_ATTR_SWCH) {
                     new_node->type = NODE_SWITCH;
+                    new_node->adjacent_direction = 0;
                     snprintf(new_node->name, sizeof new_node->name, "switch 0x%02x %s", attr, attr_name);
                 } else if (ap_tile_attrs[attr] & TILE_ATTR_LFT0) {
                     new_node->type = NODE_ITEM;
@@ -1456,13 +1559,13 @@ ap_update_map_screen(bool force)
     }
     ap_sprites_print();
     ap_print_map_screen(screen);
-    printf("found %d nodes\n", new_node_count);
+    printf("found %d nodes: [(un)Reachable? (un)Adjacent?] (tl x br) type \"name\"\n", new_node_count);
     int i = 0; 
     for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
         bool reachable = ap_pathfind_local(screen, ap_link_xy(), node->tl, node->br, false) > 0;
         node->_reachable = reachable;
-        printf("   %d. [%c%c] (" PRIXY " x " PRIXY ") %s\n",
-                i++, "uR"[reachable], "uM"[node->adjacent_node != NULL], PRIXYF(node->tl), PRIXYF(node->br), node->name);
+        printf("   %d. [%c%c] (" PRIXY " x " PRIXY ") %s \"%s\"\n",
+                i++, "uR"[reachable], "uA"[node->adjacent_node != NULL], PRIXYF(node->tl), PRIXYF(node->br), ap_node_type_names[node->type], node->name);
     }
 
     return screen;
@@ -1518,4 +1621,9 @@ ap_map_record_transition_from(struct ap_node * src_node)
     dst_node->adjacent_node = src_node;
 
     return 0;
+}
+
+bool
+ap_node_islocked(struct ap_node * node) {
+    return node->tile_attr == 0x82 && *ap_ram.room_trap_doors;
 }
