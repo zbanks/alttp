@@ -116,7 +116,7 @@ extern struct ap_snes9x * ap_emu;
     X(WALK) /* Walkable */ \
     X(SWIM) /* Swim-able */ \
     X(DOOR) /* Door or other transition */ \
-    X(NODE) /* Importatn goal node (chest, or something under a pot, stairs) */ \
+    X(NODE) /* Important goal node (chest, or something under a pot, stairs) */ \
     X(LFT0) /* Can lift with no power ups */ \
     X(LFT1) /* Can lift with power glove */ \
     X(LFT2) /* Can lift with titans mitts */ \
@@ -124,6 +124,7 @@ extern struct ap_snes9x * ap_emu;
     X(CHST) /* Chest */ \
     X(BONK) /* Bonk rocks */ \
     X(SWCH) /* Floor button */ \
+    X(STRS) /* Dungeon Stairs */ \
 
 enum {
 #define X(d) CONCAT(_TILE_ATTR_INDEX_, d),
@@ -147,8 +148,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x09] = TILE_ATTR_WALK,
     [0x10] = 0, // edge of ledge?
     [0x1c] = TILE_ATTR_WALK, // open below?
-    [0x1d] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // stairs?
-    [0x1e] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // stairs?
+    [0x1d] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
+    [0x1e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
 
     [0x22] = TILE_ATTR_WALK,
     [0x23] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button 0x8000
@@ -178,8 +179,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x38] = 0,
     [0x39] = 0,
 
-    [0x3d] = TILE_ATTR_WALK, // stairs?
-    [0x3e] = TILE_ATTR_WALK, // stairs?
+    [0x3d] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
+    [0x3e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
 
     [0x40] = TILE_ATTR_WALK,
     [0x48] = TILE_ATTR_WALK,
@@ -200,8 +201,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x5B] = TILE_ATTR_NODE | TILE_ATTR_CHST,
     [0x5C] = TILE_ATTR_NODE | TILE_ATTR_CHST,
     [0x5D] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x5E] = TILE_ATTR_NODE | TILE_ATTR_DOOR, // stairs up
-    [0x5F] = TILE_ATTR_NODE | TILE_ATTR_DOOR, // stairs down
+    [0x5E] = TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs up
+    [0x5F] = TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs down
 
     [0x70] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
     [0x71] = TILE_ATTR_NODE | TILE_ATTR_LFT0,

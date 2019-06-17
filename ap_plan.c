@@ -129,21 +129,6 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
 {
     int rc;
     struct ap_screen * screen = ap_update_map_screen(false);
-    if (task->node != NULL && ap_node_islocked(task->node)) {
-        if (task->node->lock_node == NULL)
-            return RC_FAIL;
-        // Prepend an unlock task
-        struct ap_task * new_task = ap_task_prepend(); 
-        new_task->type = TASK_GOTO_POINT;
-        new_task->node = task->node->lock_node;
-        snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
-        // Maybe we need to step off first
-        new_task = ap_task_prepend(); 
-        new_task->type = TASK_STEP_OFF_SWITCH;
-        new_task->node = task->node->lock_node;
-        snprintf(new_task->name, sizeof new_task->name, "step off");
-        return RC_INPR; // XXX should there be RC_RTRY?
-    }
     switch (task->type) {
     case TASK_STEP_OFF_SWITCH:
         switch (task->state) {
@@ -158,6 +143,21 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_GOTO_POINT:
+        if (task->node != NULL && ap_node_islocked(task->node)) {
+            if (task->node->lock_node == NULL)
+                return RC_FAIL;
+            // Prepend an unlock task
+            struct ap_task * new_task = ap_task_prepend(); 
+            new_task->type = TASK_GOTO_POINT;
+            new_task->node = task->node->lock_node;
+            snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
+            // Maybe we need to step off first
+            new_task = ap_task_prepend(); 
+            new_task->type = TASK_STEP_OFF_SWITCH;
+            new_task->node = task->node->lock_node;
+            snprintf(new_task->name, sizeof new_task->name, "step off");
+            return RC_INPR; // XXX should there be RC_RTRY?
+        }
         switch (task->state) {
         case 0:
             rc = ap_pathfind_node(task->node);
@@ -192,10 +192,11 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->state++;
         case 2:
         case 3:
+            JOYPAD_CLEAR(UP);
             if (task->state == 2) { JOYPAD_SET(A); task->state = 3; }
             else { JOYPAD_CLEAR(A); task->state = 2; }
-            //LOG("item_recv_method: %x", *ap_ram.item_recv_method);
-            if (*ap_ram.item_recv_method == 1) return RC_DONE;
+            LOG("item_recv_method: %x", *ap_ram.item_recv_method);
+            if (*ap_ram.item_recv_method == 1 && task->timeout < 10) return RC_DONE;
         }
         break;
     case TASK_LIFT_POT:

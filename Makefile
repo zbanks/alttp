@@ -14,13 +14,13 @@ TARGET = build/libalttp.a
 INC = -I.
 LIB = -L/usr/local/lib
 
-DEPS = $(OBJECTS:.o=build/.d)
+DEPS = $(OBJECTS:%.o=%.d)
 -include $(DEPS)
 
 # compile and generate dependency info;
-build/%.o: %.c | $(wildcard *.h)
+build/%.o: %.c
 	$(CC) -c $(CFLAGS) $*.c -o build/$*.o
-	$(CC) -MM $(CFLAGS) $*.c > build/$*.d
+	$(CC) -MM $(CFLAGS) -MT build/$*.o $*.c > build/$*.d
 
 # Assembler, compiler, and linker flags
 override CFLAGS += $(INC) -O3 -ggdb3 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused -Wwrite-strings -std=c11 -D_POSIX_C_SOURCE=201810L -fPIC 
