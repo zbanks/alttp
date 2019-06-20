@@ -101,6 +101,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     } else {
         INFO("Ovrwld: %x St: %2x", *ap_ram.overworld_index, ap_ram.sram_overworld_state[*ap_ram.overworld_index]);
     }
+    //LOG("Link %d %d %u %u", *ap_ram.link_dx, *ap_ram.link_dy, *ap_ram.link_x, *ap_ram.link_y);
     //INFO("citem: %#x", *ap_ram.current_item);
 
     //uint8_t *b = ap_emu->base(0x7E001A);

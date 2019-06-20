@@ -39,8 +39,8 @@
     X(area,                 uint8_t,   0x7E008A)   \
     X(link_x,               uint16_t,  0x7E0022)   \
     X(link_y,               uint16_t,  0x7E0020)   \
-    X(link_dx,              uint8_t,   0x7E0031)   \
-    X(link_dy,              uint8_t,   0x7E0030)   \
+    X(link_dx,              int8_t,    0x7E0031)   \
+    X(link_dy,              int8_t,    0x7E0030)   \
     X(link_hold,            uint16_t,  0x7E0308)   \
     X(link_direction,       uint8_t,   0x7E002F)   \
     X(link_swordstate,      uint8_t,   0x7E003A)   \

@@ -437,7 +437,7 @@ ap_follow_targets(uint16_t * joypad)
         }
 
         target = ap_targets[ap_target_count-1];
-        if (XYL1DIST(link, target) == 0) {
+        if (XYL1DIST(link, target) <= 1) {
             ap_target_count--;
             continue;
         }
@@ -1192,6 +1192,7 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
     if (new_node->tl.x == 0 && new_node->tl.y == 0)
         return NULL;
     assert(new_node->type != NODE_NONE);
+    assert(XYUNDER(new_node->tl, new_node->br));
 
     // Check if the node already exists
     for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
@@ -1506,31 +1507,36 @@ ap_update_map_screen(bool force)
         }
         */
     }
-    if (tl.x >= 0x4000 && (tl.x & 0x200) && *ap_ram.dungeon_room == 0xAA) {
-        // Inside on upper level
+    if (tl.x >= 0x4000 && (tl.x & 0x200)) {
+        // Inside on upper level, look for non-diagonal ledges
+        // and add them as nodes
         for (struct xy xy = tl; xy.y < br.y; xy.y += 0x8) {
             for (xy.x = tl.x; xy.x < br.x; xy.x += 0x8) {
                 uint8_t attr = ap_map_attr(xy);
                 int d = attr - 0x27;
                 if (d <= 0 || d >= 5)
                     continue;
-                static const int check_dirs[5] = {0, DIR_U, DIR_U, DIR_L, DIR_L};
+                // In dungeons 0x28 is used for both up & down; 0x2A for both left & right
+                // Look for the 0x1C "hole" to fall into
+                if (ap_map_attr(XYOP2(xy, + 8*, dir_dxy[d])) != 0x1C)
+                    d++;
+                if (ap_map_attr(XYOP2(xy, + 8*, dir_dxy[d])) != 0x1C)
+                    continue;
                 static const int perp_dirs[5] = {0, DIR_R, DIR_R, DIR_D, DIR_D};
-                uint8_t adj_attr = ap_map_attr(XYOP2(xy, + 8*, dir_dxy[check_dirs[d]]));
+                uint8_t adj_attr = ap_map_attr(XYOP2(xy, - 8*, dir_dxy[perp_dirs[d]]));
                 if (adj_attr == attr)
                     continue; // already made a node for this
-                struct xy l_tl = xy, l_br = xy;
+                struct xy l_br = xy;
                 bool valid_ledge = true;
                 int ledge_size = 0;
-                for (struct xy t; XYUNDER(t, br); t = XYOP2(t, + 8*, dir_dxy[perp_dirs[d]])) {
+                for (struct xy t = xy; XYUNDER(t, br); t = XYOP2(t, + 8*, dir_dxy[perp_dirs[d]])) {
                     uint8_t t_attr = ap_map_attr(t);
-                    if (ap_tile_attrs[t_attr] & TILE_ATTR_LDGE) {
+                    if (ap_tile_attrs[t_attr] & TILE_ATTR_STRS) {
+                        // If there are stairs, omit the ledge (because you can just take the stairs)
                         valid_ledge = false;
                     } else if (t_attr != attr) {
                         break;
-                    } else if (!(ap_tile_attrs[ap_map_attr(XYOP2(t, -, dir_dxy[d]))] & TILE_ATTR_WALK)) {
-                        valid_ledge = false;
-                    } else {
+                    } else if (ap_tile_attrs[ap_map_attr(XYOP2(t, - 8*, dir_dxy[d]))] & TILE_ATTR_WALK) {
                         ledge_size++;
                     }
                     l_br = t;
@@ -1539,15 +1545,20 @@ ap_update_map_screen(bool force)
                     new_node->tile_attr = attr;
                     new_node->type = NODE_TRANSITION;
                     new_node->adjacent_direction = d;
-                    struct xy offset = XYOP1(dir_dxy[new_node->adjacent_direction], * -8);
-                    new_node->tl = XYOP2(l_tl, +, offset);
-                    new_node->br = XYOP2(l_br, + 7 + , XYOP1(offset, * 2));
+                    struct xy offset = XYOP1(dir_dxy[new_node->adjacent_direction], * 16);
+                    new_node->tl = xy; // XYOP2(l_tl, +, offset);
+                    new_node->br = XYOP1(l_br, + 7);
+                    if (d == DIR_D || d == DIR_R) {
+                        new_node->tl = XYOP2(new_node->tl, -, offset);
+                    } else {
+                        new_node->br = XYOP2(new_node->br, -, offset);
+                    }
                     snprintf(new_node->name, sizeof new_node->name, "ledge %s 0x%02x", dir_names[new_node->adjacent_direction], attr);
                     ap_screen_commit_node(screen, &new_node);
                     new_node_count++;
                 }
 
-                xy = l_br;
+                xy.x = l_br.x;
             }
         }
     }
