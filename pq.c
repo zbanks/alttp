@@ -14,7 +14,7 @@ struct pq {
     size_t data_size;
     size_t capacity;
     size_t size;
-    unsigned char * entries; // Array of struct pq_entry
+    unsigned char * entries; // Array of `struct pq_entry`
 };
 
 #define PQ_PARENT(I)    (I == 0 ? 0 : ((I - 1) / 2))
@@ -27,15 +27,17 @@ struct pq {
 struct pq *
 pq_create(size_t data_size) {
     struct pq * pq = calloc(1, sizeof *pq);
-    if (pq == NULL)
+    if (pq == NULL) {
         return NULL;
+    }
 
     pq->data_size = data_size;
     pq->capacity = 1024;
     pq->size = 0;
     pq->entries = calloc(pq->capacity, PQ_ENTRY_SIZE(pq));
-    if (pq->entries == NULL)
+    if (pq->entries == NULL) {
         return free(pq), NULL;
+    }
 
     return pq;
 }
@@ -49,8 +51,10 @@ pq_destroy(struct pq * pq) {
 void
 pq_clear(struct pq * pq) {
     pq->size = 0;
-    // Not required; but good for debugging
-    //memset(pq->entries, 0, PQ_ENTRY_SIZE(pq) * pq->capacity);
+
+#ifdef PQ_DEBUG
+    memset(pq->entries, 0, PQ_ENTRY_SIZE(pq) * pq->capacity);
+#endif
 }
 
 int
@@ -60,8 +64,9 @@ pq_push(struct pq * pq, uint64_t priority, const void * data) {
     if (pq->size > pq->capacity) {
         size_t new_capacity = pq->capacity * 2;
         void * new_entries = realloc(pq->entries, new_capacity * PQ_ENTRY_SIZE(pq));
-        if (new_entries == NULL)
+        if (new_entries == NULL) {
             return -1;
+        }
         pq->entries = new_entries;
         memset(PQ_ENTRY(pq, pq->capacity), 0, PQ_ENTRY_SIZE(pq) * pq->capacity);
         pq->capacity = new_capacity;
@@ -71,8 +76,9 @@ pq_push(struct pq * pq, uint64_t priority, const void * data) {
     while (idx > 0) {
         size_t parent_idx = PQ_PARENT(idx);
         struct pq_entry * parent = PQ_ENTRY(pq, parent_idx);
-        if (parent->priority <= priority)
+        if (parent->priority <= priority) {
             break;
+        }
 
         memcpy(entry, parent, PQ_ENTRY_SIZE(pq));
         idx = parent_idx;
@@ -80,8 +86,9 @@ pq_push(struct pq * pq, uint64_t priority, const void * data) {
     }
 
     entry->priority = priority;
-    if (data != NULL)
+    if (data != NULL) {
         memcpy(entry->data, data, pq->data_size);
+    }
 
     return 0;
 }
@@ -93,10 +100,12 @@ pq_pop(struct pq * pq, uint64_t * priority_out, void * data_out) {
 
     size_t idx = 0;
     struct pq_entry * entry = PQ_ENTRY(pq, idx);
-    if (priority_out != NULL)
+    if (priority_out != NULL) {
         *priority_out = entry->priority;
-    if (data_out != NULL)
+    }
+    if (data_out != NULL) {
         memcpy(data_out, entry->data, pq->data_size);
+    }
 
     size_t child_idx = --pq->size;
     uint64_t priority = PQ_ENTRY(pq, child_idx)->priority;
@@ -120,20 +129,23 @@ pq_pop(struct pq * pq, uint64_t * priority_out, void * data_out) {
                 smallest_idx = right_idx;
             }
         }
-        if (smallest_idx == idx)
+        if (smallest_idx == idx) {
             break;
+        }
         memcpy(PQ_ENTRY(pq, idx), PQ_ENTRY(pq, smallest_idx), PQ_ENTRY_SIZE(pq));
         idx = smallest_idx;
     }
-    if (child_idx != idx)
+    if (child_idx != idx) {
         memcpy(PQ_ENTRY(pq, idx), PQ_ENTRY(pq, child_idx), PQ_ENTRY_SIZE(pq));
+    }
 
-    // debug
+#ifdef PQ_DEBUG
     for (size_t i = 0; i < pq->size; i++) {
         entry = PQ_ENTRY(pq, i);
         if (entry->priority < *priority_out)
             printf("Found entry with priority %zu < %zu\n", entry->priority, *priority_out);
     }
+#endif
 
     return 0;
 }
@@ -143,15 +155,17 @@ pq_size(struct pq * pq) {
     return pq->size;
 }
 
-// debugging
+#ifdef PQ_DEBUG
 void
 pq_print(struct pq * pq) {
     for (size_t i = 0; i < pq->size; i++) {
         struct pq_entry * entry = PQ_ENTRY(pq, i);
         struct pq_entry * parent = PQ_ENTRY(pq, PQ_PARENT(i));
-        if (parent->priority > entry->priority)
+        if (parent->priority > entry->priority) {
             printf("!");
+        }
         printf("%lu ", entry->priority);
     }
     printf("\n");
 }
+#endif

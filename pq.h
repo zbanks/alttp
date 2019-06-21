@@ -16,7 +16,9 @@ int pq_push(struct pq * pq, uint64_t priority, const void * data);
 int pq_pop(struct pq * pq, uint64_t * priority_out, void * data_out);
 size_t pq_size(struct pq * pq);
 
+#ifdef PQ_DEBUG
 void pq_print(struct pq * pq);
+#endif
 
 #endif
 
