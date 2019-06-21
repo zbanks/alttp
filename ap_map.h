@@ -106,10 +106,13 @@ void
 ap_print_map_screen(struct ap_screen * screen);
 
 void
-ap_print_map_full();
+ap_print_map_screen_pair(void);
 
 void
-ap_print_state();
+ap_print_map_full(void);
+
+void
+ap_print_state(void);
 
 uint32_t
 ap_path_heuristic(struct xy src, struct xy dst_tl, struct xy dst_br);

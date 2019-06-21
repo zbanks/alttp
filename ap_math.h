@@ -28,6 +28,11 @@ struct xy {
 #define XYRDIV8(xy) XY(((xy).x + 3) / 8, ((xy).y + 3) / 8)
 #define XYUNDER(xy, br) ((xy).x < (br).x && (xy).y < (br).y)
 
+#define XYINDOORS(xy) ((xy).x >= 0x4000)
+#define XYONLOWER(xy) (XYINDOORS(xy) && ((xy).x & 0x200) == 0x000)
+#define XYONUPPER(xy) (XYINDOORS(xy) && ((xy).x & 0x200) == 0x200)
+#define XYFLIPBG(xy) XY((xy).x ^ 0x200, (xy).y)
+
 #define PRIXYV "(%u %#06x, %u %#06x)"
 #define PRIXYVF(xy) (xy).x, (xy).x, (xy).y, (xy).y
 #define PRIXY "%x,%x"

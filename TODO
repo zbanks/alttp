@@ -1,2 +1,5 @@
 * With diagonal movement, need to check the corners
-* Need a better map representation
+* Mark how to open doors in rooms (e.g. defeat all enemies)
+* Defeat all the stalfos in that one room in eastern palace
+* Handle/detect big chest
+* May need to leave screen to get to point on the same screen, `ap_pathfind_local` vs. `ap_pathfind_global`
