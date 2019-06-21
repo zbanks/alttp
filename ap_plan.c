@@ -173,7 +173,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                 JOYPAD_SET(A);
                 task->state = 2;
             } else if (*ap_ram.carrying_bit7) {
-                //JOYPAD_SET(A);
+                JOYPAD_SET(A);
                 task->state = 2;
             }
             return ap_follow_targets(joypad);
@@ -431,17 +431,10 @@ retry_new_goal:;
             ap_active_goal = NULL;
             goto retry_new_goal;
         }
-        if (node->screen == ap_update_map_screen(false)) {
-            task = ap_task_prepend(); 
-            task->type = TASK_GOTO_POINT;
-            task->node = node;
-            snprintf(task->name, sizeof task->name, "goto point onscreen");
-            //break; may not be reachable from where we started
-        }
 
         uint64_t iter = node->pgsearch.iter;
         while (node->pgsearch.from != NULL) {
-            assert(node->pgsearch.iter == iter);
+            assert_bp(node->pgsearch.iter == iter);
             if (node->screen == node->pgsearch.from->screen) {
                 task = ap_task_prepend(); 
                 task->type = TASK_GOTO_POINT;

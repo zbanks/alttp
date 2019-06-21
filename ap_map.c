@@ -675,8 +675,8 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             state[y][x].tile_attrs = tile;
             state[y][x].raw_tile = raw_tile;
             uint8_t ledge_mask = 0;
-            //if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
-            if (tile & (TILE_ATTR_WALK)) {
+            if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
+            //if (tile & (TILE_ATTR_WALK)) {
                 cost = 0;
             } else if (tile & TILE_ATTR_LDGE) {
                 cost = (1 << 20); // calculated at search time
@@ -949,19 +949,6 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         LOG("start screen == NULL");
         return -1;
     }
-    if (start_screen == destination->screen) {
-        int local_dist = ap_pathfind_local(start_screen, start_xy, destination->tl, destination->br, commit);
-        if (local_dist >= 0) return local_dist;
-    }
-
-    //if (commit) LOG("Starting global search from " PRIXYV " to " PRIBBV, PRIXYVF(start_xy), PRIBBVF(*destination));
-
-    static struct pq * pq = NULL;
-    if (pq == NULL) {
-        pq = pq_create(sizeof(struct ap_node *));
-        if (pq == NULL) exit(1);
-    }
-    pq_clear(pq);
 
     static uint64_t iter = 0;
     iter += 2;
@@ -976,6 +963,22 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
             .distance = 0,
         }
     };
+
+    if (start_screen == destination->screen) {
+        int local_dist = ap_pathfind_local(start_screen, start_xy, destination->tl, destination->br, commit);
+        if (local_dist >= 0) {
+            destination->pgsearch.iter = iter;
+            destination->pgsearch.from = start_node;
+            return local_dist;
+        }
+    }
+
+    static struct pq * pq = NULL;
+    if (pq == NULL) {
+        pq = pq_create(sizeof(struct ap_node *));
+        if (pq == NULL) exit(1);
+    }
+    pq_clear(pq);
     pq_push(pq, 0, &start_node);
 
     size_t r = 0;
@@ -1088,8 +1091,8 @@ ap_print_map_graph()
                 }
 
                 for (struct ap_node * node2 = node->next; node2 != screen->node_list; node2 = node2->next) {
-                    bool reachable = ap_pathfind_local(screen, XYMID(node->tl, node->br), node2->tl, node2->br, false) >= 0;
-                    if (reachable) {
+                    int dist = ap_pathfind_local(screen, XYMID(node->tl, node->br), node2->tl, node2->br, false);
+                    if (dist >= 0) {
                         fprintf(graphf, " n%p -> n%p [color=blue dir=both]\n", node, node2);
                     }
                 }
