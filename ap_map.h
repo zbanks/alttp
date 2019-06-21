@@ -49,7 +49,6 @@ DIR_LIST
     X(ITEM) \
     X(CHEST) \
     X(TRANSITION) \
-    X(INTERIOR_DOOR) \
     X(SWITCH) \
 
 struct ap_screen;
@@ -107,6 +106,9 @@ ap_print_map_screen(struct ap_screen * screen);
 
 void
 ap_print_map_screen_pair(void);
+
+void
+ap_print_map_graph();
 
 void
 ap_print_map_full(void);

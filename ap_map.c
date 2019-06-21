@@ -950,7 +950,8 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         return -1;
     }
     if (start_screen == destination->screen) {
-        return ap_pathfind_local(start_screen, start_xy, destination->tl, destination->br, commit);
+        int local_dist = ap_pathfind_local(start_screen, start_xy, destination->tl, destination->br, commit);
+        if (local_dist >= 0) return local_dist;
     }
 
     //if (commit) LOG("Starting global search from " PRIXYV " to " PRIBBV, PRIXYVF(start_xy), PRIBBVF(*destination));
@@ -990,11 +991,11 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         node->pgsearch.iter++;
         if (node == destination)
             goto search_done;
-        assert(node->type == NODE_TRANSITION || node->type == NODE_INTERIOR_DOOR || node == start_node);
+        assert(node->type == NODE_TRANSITION || node == start_node);
 
         // Try going to an adjacent screen
         if (node->adjacent_node != NULL && node->adjacent_direction != 0) {
-            uint64_t distance = node->pgsearch.distance + 10000;
+            uint64_t distance = node->pgsearch.distance + 1000;
             if ((node->adjacent_node->pgsearch.iter == iter &&
                  node->adjacent_node->pgsearch.distance < distance) ||
                  node->adjacent_node->pgsearch.iter < iter) {
@@ -1014,7 +1015,7 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
                 continue;
             if (adj_node->_debug_blocked)
                 continue;
-            if (!(adj_node == destination || adj_node->type == NODE_TRANSITION || adj_node->type == NODE_INTERIOR_DOOR))
+            if (!(adj_node == destination || adj_node->type == NODE_TRANSITION))
                 continue;
             if (adj_node->pgsearch.iter == iter + 1)
                 continue;
@@ -1048,7 +1049,7 @@ search_done:
     size_t count = 0;
     while (next != NULL) {
         assert(next->pgsearch.iter == iter + 1);
-        LOG(" %zu: %s " PRIXYV " %ld", count, next->name, PRIXYVF(next->pgsearch.xy), next->pgsearch.distance);
+        LOG("    %zu: %s " PRIXYV " %ld", count, next->name, PRIXYVF(next->pgsearch.xy), next->pgsearch.distance);
         next = next->pgsearch.from;
         count++;
     }
@@ -1057,9 +1058,62 @@ search_done:
 }
 
 void
+ap_print_map_graph()
+{
+    FILE *graphf = NONNULL(fopen("full_map.dot", "w"));
+    fprintf(graphf, "digraph map {\nconcatenate=true\n");
+    struct xy link = ap_link_xy();
+    int32_t link_min_dist = INT32_MAX;
+    struct ap_node * link_nearest_node = NULL;
+
+    for (struct xy xy = XY(0, 0); xy.y < 0x8000; xy.y += 0x100) {
+        if (!map_screen_mask_y[xy.y / 0x100]) continue;
+        for (xy.x = 0; xy.x < 0xC000; xy.x += 0x100) {
+            if (!map_screen_mask_x[xy.x / 0x100]) continue;
+            struct ap_screen * screen = map_screens[XYMAPSCREEN(xy)];
+            if (screen == NULL || !XYEQ(screen->tl, xy)) continue;
+
+            //fprintf(graphf, "subgraph cluster_%d { color=black; label=\"%s\"\n", cluster++, screen->name);
+            for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+                struct xy node_mid = XYMID(node->tl, node->br);
+                fprintf(graphf, " n%p [label=\"%s\"]\n", node, node->name);
+
+                if (XYL1DIST(link, node_mid) < link_min_dist) {
+                    link_min_dist = XYL1DIST(link, node_mid);
+                    link_nearest_node = node;
+                }
+
+                if (node->adjacent_node != NULL) {
+                    fprintf(graphf, " n%p -> n%p [label=%s color=purple];\n", node, node->adjacent_node, dir_names[node->adjacent_direction]);
+                }
+
+                for (struct ap_node * node2 = node->next; node2 != screen->node_list; node2 = node2->next) {
+                    bool reachable = ap_pathfind_local(screen, XYMID(node->tl, node->br), node2->tl, node2->br, false) >= 0;
+                    if (reachable) {
+                        fprintf(graphf, " n%p -> n%p [color=blue dir=both]\n", node, node2);
+                    }
+                }
+            }
+            //fprintf(graphf, "}\n");
+        }
+    }
+
+    for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
+        if (goal->node == NULL) continue;
+        fprintf(graphf, " n%p [color=red];\n", goal->node);
+    }
+
+    fprintf(graphf, " n%p [color=green];\n", link_nearest_node);
+    fprintf(graphf, "}\n");
+    fclose(graphf);
+    LOG("Exported map graph");
+}
+
+void
 ap_print_map_full()
 {
     ap_print_state();
+    ap_print_map_graph();
     FILE * mapf = fopen("full_map.pgm.tmp", "w");
     uint16_t size_x = 0, size_y = 0;
     for (size_t i = 0; i < 0xC0; i++) {
@@ -1174,13 +1228,9 @@ ap_print_state()
             n.tl = XYOP2(node->tl, -, screen->tl);
             n.br = XYOP2(node->br, -, screen->tl);
             fprintf(screenf, "    node: %s " PRIBBWH " ", node->name, PRIBBWHF(n));
-            if (node->type == NODE_TRANSITION || node->type == NODE_INTERIOR_DOOR) {
+            if (node->type == NODE_TRANSITION) {
                 if (node->adjacent_node) {
-                    if (node->type == NODE_INTERIOR_DOOR) {
-                        fprintf(screenf, "to interior node %s", node->adjacent_node->name);
-                    } else {
-                        fprintf(screenf, "to screen %s node %s", node->adjacent_node->screen->name, node->adjacent_node->name);
-                    }
+                    fprintf(screenf, "to screen %s node %s", node->adjacent_node->screen->name, node->adjacent_node->name);
                 } else {
                     fprintf(screenf, "unmapped");
                 }
@@ -1347,7 +1397,6 @@ ap_update_map_screen_nodes()
         case NODE_CHEST:
         case NODE_ITEM:
         case NODE_TRANSITION:
-        case NODE_INTERIOR_DOOR:
         case NODE_NONE:
         default:;
         }
@@ -1419,7 +1468,7 @@ ap_update_map_screen(bool force)
 
     int i = 0; 
     for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
-        bool reachable = ap_pathfind_local(screen, ap_link_xy(), node->tl, node->br, false) > 0;
+        bool reachable = ap_pathfind_local(screen, ap_link_xy(), node->tl, node->br, false) >= 0;
         node->_reachable = reachable;
         printf("   %d. [%c%c] (" PRIXY " x " PRIXY ") %s \"%s\"\n",
                 i++, "uR"[reachable], "uA"[node->adjacent_node != NULL], PRIXYF(node->tl), PRIXYF(node->br), ap_node_type_names[node->type], node->name);
@@ -1507,13 +1556,8 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             new_node->tl = XYFN2(MIN, new_start, new_end);
             new_node->br = XYFN2(MAX, new_start, new_end);
             new_node->br = XYOP1(new_node->br, + 7);
-            if (k < 6) {
-                new_node->type = NODE_TRANSITION;
-                new_node->adjacent_direction = i;
-            } else {
-                new_node->type = NODE_INTERIOR_DOOR;
-                new_node->adjacent_direction = i;
-            }
+            new_node->type = NODE_TRANSITION;
+            new_node->adjacent_direction = i;
             new_node->tile_attr = ap_map_attr(ap_box_edge(new_node->tl, new_node->br, i));
             new_node->locked_xy = XY(0, 0);
             if (new_node->tile_attr == 0x82 || new_node->tile_attr == 0x83) { // locked door
@@ -1585,9 +1629,11 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 uint8_t adj_attr = ap_map_attr(XYOP2(xy, - 8*, dir_dxy[perp_dirs[d]]));
                 if (adj_attr == attr)
                     continue; // already made a node for this
+                struct xy l_tl = xy;
                 struct xy l_br = xy;
                 bool valid_ledge = true;
                 int ledge_size = 0;
+                bool found_start = false;
                 for (struct xy t = xy; XYUNDER(t, br); t = XYOP2(t, + 8*, dir_dxy[perp_dirs[d]])) {
                     uint8_t t_attr = ap_map_attr(t);
                     if (ap_tile_attrs[t_attr] & TILE_ATTR_STRS) {
@@ -1596,12 +1642,18 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                     } else if (t_attr != attr) {
                         break;
                     } else if (ap_tile_attrs[ap_map_attr(XYOP2(t, - 8*, dir_dxy[d]))] & TILE_ATTR_WALK) {
+                        if (!found_start) {
+                            found_start = true;
+                            l_tl = t;
+                        }
                         ledge_size++;
+                    } else if (found_start) {
+                        break;
                     }
                     l_br = t;
                 }
-                if (valid_ledge && ledge_size >= 2) {
-                    struct xy ledge_tl = xy;
+                if (found_start && valid_ledge && ledge_size >= 2) {
+                    struct xy ledge_tl = l_tl;
                     struct xy ledge_br = XYOP1(l_br, + 7);
                     struct xy offset = XYOP1(dir_dxy[d], * 8);
                     if (d == DIR_D || d == DIR_R) {

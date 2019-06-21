@@ -180,13 +180,14 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_OPEN_CHEST:
+        LOG("timeout: %d; state: %d; touching: %x; push: %x; item_recv_method: %x", task->timeout, task->state, *ap_ram.touching_chest, *ap_ram.push_timer, *ap_ram.item_recv_method);
         switch (task->state) {
         case 0:
             task->timeout = 64;
             task->state++;
         case 1:
             JOYPAD_SET(UP);
-            if (!(*ap_ram.touching_chest & 0xF)) {
+            if (!(*ap_ram.touching_chest & 0xF) && (*ap_ram.push_timer == 0x20)) {
                 break;
             }
             task->state++;
@@ -195,8 +196,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             JOYPAD_CLEAR(UP);
             if (task->state == 2) { JOYPAD_SET(A); task->state = 3; }
             else { JOYPAD_CLEAR(A); task->state = 2; }
-            LOG("item_recv_method: %x", *ap_ram.item_recv_method);
-            if (*ap_ram.item_recv_method == 1 && task->timeout < 10) return RC_DONE;
+            if (*ap_ram.item_recv_method == 1) return RC_DONE;
         }
         break;
     case TASK_LIFT_POT:
@@ -436,7 +436,7 @@ retry_new_goal:;
             task->type = TASK_GOTO_POINT;
             task->node = node;
             snprintf(task->name, sizeof task->name, "goto point onscreen");
-            break;
+            //break; may not be reachable from where we started
         }
 
         uint64_t iter = node->pgsearch.iter;
