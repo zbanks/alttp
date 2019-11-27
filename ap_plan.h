@@ -8,6 +8,7 @@
     X(CHEST) \
     X(EXPLORE) \
     X(ITEM) \
+    X(NPC) \
 
 enum ap_goal_type {
 #define X(type) CONCAT(GOAL_, type),
@@ -57,6 +58,7 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node);
     X(LIFT_POT) \
     X(SET_INVENTORY) \
     X(STEP_OFF_SWITCH) \
+    X(TALK_NPC) \
 
 enum ap_task_type {
 #define X(type) CONCAT(TASK_, type),

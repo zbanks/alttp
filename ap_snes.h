@@ -332,6 +332,7 @@ enum ap_link_state {
     X(ITEM) /* Pick-up */ \
     X(TALK) /* Talk for progression item */ \
     X(FLLW) /* Thing that can follow you */ \
+    X(NODE) /* Worth making a node for */ \
 
 enum {
 #define X(d) CONCAT(_SPRITE_ATTR_INDEX_, d),
@@ -470,9 +471,9 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x70] = SPRITE_ATTR_ENMY, // Splitting Fireballs from Helmasaur King
     [0x71] = SPRITE_ATTR_SWCH, // Leever
     [0x72] = 0, // Activator for the ponds (where you throw in items)
-    [0x73] = SPRITE_ATTR_TALK, // Links Uncle / Sage / Barrier that opens in the sanctuary
+    [0x73] = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE, // Links Uncle / Sage / Barrier that opens in the sanctuary
     [0x74] = 0, // Red Hat Boy who runs from you
-    [0x75] = SPRITE_ATTR_TALK, // Bottle Vendor
+    [0x75] = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE, // Bottle Vendor
     [0x76] = SPRITE_ATTR_FLLW | SPRITE_ATTR_BLOK, // Princess Zelda
     [0x77] = SPRITE_ATTR_ENMY, // Also Fire Faeries (seems like a different variety)
     [0x78] = SPRITE_ATTR_BLOK, // Village Elder
@@ -516,7 +517,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x9C] = SPRITE_ATTR_ENMY, // Black sperm looking things
     [0x9D] = SPRITE_ATTR_ENMY, // Black sperm looking things
     [0x9E] = 0, // The ostrich animal w/ the flute boy?
-    [0x9F] = SPRITE_ATTR_ITEM, // Flute
+    [0x9F] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Flute
     
     [0xA0] = 0, // Birds w/ the flute boy?
     [0xA1] = SPRITE_ATTR_ENMY, // Ice man
@@ -591,14 +592,14 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xE1] = SPRITE_ATTR_ITEM, // Arrow Refill (5)
     [0xE2] = SPRITE_ATTR_ITEM, // Arrow Refill (10)
     [0xE3] = SPRITE_ATTR_ITEM, // Faerie
-    [0xE4] = SPRITE_ATTR_ITEM, // Key
-    [0xE5] = SPRITE_ATTR_ITEM, // Big Key
-    [0xE6] = SPRITE_ATTR_ITEM, // Red Shield (after dropped by pickit)
-    [0xE7] = SPRITE_ATTR_ITEM, // Mushroom
+    [0xE4] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Key
+    [0xE5] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Big Key
+    [0xE6] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Red Shield (after dropped by pickit)
+    [0xE7] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Mushroom
     [0xE8] = 0, // Fake Master Sword
     [0xE9] = 0, // Magic Shop dude / His items, including the magic powder
-    [0xEA] = SPRITE_ATTR_ITEM, // Full Heart Container
-    [0xEB] = SPRITE_ATTR_ITEM, // Quarter Heart Container
+    [0xEA] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Full Heart Container
+    [0xEB] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Quarter Heart Container
     [0xEC] = 0, // Bushes or pot, picked up/thrown
     [0xED] = 0, // Cane of Somaria Platform
     [0xEE] = SPRITE_ATTR_BLOK, // Movable Mantle (in Hyrule Castle)

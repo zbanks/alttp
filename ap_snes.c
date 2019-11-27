@@ -59,9 +59,10 @@ AP_RAM_LIST
 #undef X
 
     printf("----- initialized ------ \n");
-    //ap_emu->load("well");
+    ap_emu->load("well");
     //ap_emu->load("castle");
-    ap_emu->load("estpal");
+    //ap_emu->load("estpal");
+    ap_emu->load("home");
 
     ap_plan_init();
 }

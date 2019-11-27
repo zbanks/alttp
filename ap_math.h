@@ -43,3 +43,19 @@ struct xy {
 #define PRIBBVF(bb) PRIXYVF((bb).tl), PRIXYVF((bb).br)
 #define PRIBBWH PRIXY "@" PRIXY
 #define PRIBBWHF(bb) PRIXYF(XYOP2((bb).br, -, (bb).tl)), PRIXYF((bb).tl)
+
+static inline int
+XYL1BOXDIST(struct xy xy, struct xy tl, struct xy br) {
+    int dist = 0;
+    if (tl.x > xy.x) {
+        dist += tl.x - xy.x;
+    } else if (xy.x > br.x) {
+        dist += xy.x - br.x;
+    }
+    if (tl.y > xy.y) {
+        dist += tl.y - xy.y;
+    } else if (xy.y > br.y) {
+        dist += xy.y - br.y;
+    }
+    return dist;
+}

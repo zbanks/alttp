@@ -1,9 +1,11 @@
+#include <string.h>
 #include "ap_map.h"
 #include "ap_math.h"
 #include "ap_macro.h"
 #include "ap_snes.h"
 #include "ap_plan.h"
 #include "pq.h"
+#include "pm.h"
 
 static struct ap_screen * map_screens[0x100 * 0x100];
 static bool map_screen_mask_x[0x100];
@@ -22,6 +24,24 @@ const char * const ap_node_type_names[] = {
 #define X(type) [CONCAT(NODE_, type)] = #type,
 NODE_TYPE_LIST
 #undef X
+};
+
+static const struct ap_screen_info {
+    uint16_t id;
+    char name[40];
+} ap_screen_infos[] = {
+    { .id = 0x060C, .name = "Ruins", },
+    { .id = 0x1988, .name = "EP Entrance", },
+    { .id = 0x1888, .name = "EP Hall 1", },
+    { .id = 0x1688, .name = "EP Dodgeball", },
+    { .id = 0x1488, .name = "EP Bigchest", },
+    { .id = 0x1490, .name = "EP Catwalk", },
+    { .id = 0x1491, .name = "EP 5 pots", },
+    { .id = 0x1591, .name = "EP Chest&Ledge", },
+    { .id = 0x1481, .name = "EP Crossover", },
+    { .id = 0x1580, .name = "EP Stalfos", },
+    { .id = 0x0a68, .name = "Well Uncle", },
+    { .id = -1 },
 };
 
 static int
@@ -294,8 +314,8 @@ ap_print_map_screen_pair() {
 void
 ap_print_map_screen(struct ap_screen * screen)
 {
-    FILE * mapf = fopen("map", "w");
-    FILE * mapimg = fopen("map.pbm.tmp", "w");
+    FILE * mapf = NONNULL(fopen("map", "w"));
+    FILE * mapimg = NONNULL(fopen("map.pbm.tmp", "w"));
 
     struct xy link = ap_link_xy();
     struct xy link_tl = link;
@@ -640,17 +660,28 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
         uint16_t tile_attrs;
         uint8_t raw_tile;
         uint8_t ledge;
+        uint8_t corner;
         uint32_t gscore;
         uint32_t fscore;
         uint32_t cost;
     } buf[0x82 * 0x82]; 
+    // CORNER is used to identify boundaries of 2x2 tiles (like bushes)
+    enum corner {
+        CORNER_NONE = 0,
+        CORNER_TL,
+        CORNER_TR,
+        CORNER_BL,
+        CORNER_BR,
+        CORNER_TA, // Left adjacent square
+        CORNER_BA,
+    };
     if (grid.x * grid.y > 0x80 * 0x80) {
         printf("error: grid too large: " PRIXY "\n", PRIXYF(grid));
         return -1;
     }
     for (size_t i = 0; i < 0x82 * 0x82; i++) {
         buf[i].ledge = 0xFF;
-    }
+    } 
     // Make a state[y][x]
     struct point_state (*state)[grid.x + 2] = (void *) &buf[0x83];
 
@@ -662,6 +693,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             state[y][x].gscore = (uint32_t) -1;
             state[y][x].fscore = (uint32_t) -1;
             state[y][x].cost = 0;
+            state[y][x].corner = CORNER_NONE;
             state[y][x].ledge = 0;
             state[y][x].tile_attrs = 0;
         }
@@ -685,6 +717,16 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 ledge_mask = 1ul << (raw_tile & 0x7);
             } else if (tile & TILE_ATTR_LFT0) {
                 cost = 40;
+                if (state[y][x].corner == CORNER_NONE)  {
+                    state[y][x].corner = CORNER_TL;
+                    state[y][x+1].corner = CORNER_TR;
+                    state[y+1][x].corner = CORNER_BL;
+                    state[y+1][x+1].corner = CORNER_BR;
+                    if (state[y][x-1].corner == CORNER_NONE) {
+                        state[y][x-1].corner = CORNER_TA;
+                        state[y+1][x-1].corner = CORNER_BA;
+                    }
+                }
             } else if (XYIN(mapxy, destination_tl, destination_br)) {
                 cost = 0;
             } else if (raw_tile == 0x1C) {
@@ -717,6 +759,9 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             continue;
         }
         struct xy sprite = ap_sprite_xy(i);
+        if (!XYIN(sprite, screen->tl, screen->br)) {
+            continue;
+        }
         sprite = XYOP2(XYOP1(sprite, / 8), -, tl_offset);
         uint16_t sprite_attrs = ap_sprite_attrs[ap_ram.sprite_type[i]];
         if (sprite_attrs & SPRITE_ATTR_ENMY && 
@@ -731,7 +776,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 }
             }
         }
-        if (sprite_attrs & SPRITE_ATTR_BLOK &&
+        if ((sprite_attrs & SPRITE_ATTR_BLOK) &&
             ap_ram.sprite_state[i] != 0x0A && // carried
             ap_ram.sprite_state[i] != 0x06) { // thrown
             assert_bp(ap_ram.sprite_state[i] == 0x08 || 
@@ -803,6 +848,14 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             if (i == DIR_L || i == DIR_R || i >= 5) {
                 if ((state[node.y][neighbor.x].tile_attrs & TILE_ATTR_LFT0) !=
                     (state[node.y+1][neighbor.x].tile_attrs & TILE_ATTR_LFT0))
+                    continue;
+            }
+            enum corner corner = state[neighbor.y][neighbor.x].corner;
+            if (corner != CORNER_NONE) {
+                if (i >= 5) continue;
+                if ((i == DIR_D || i == DIR_U) && (corner == CORNER_TR || corner == CORNER_BR || corner == CORNER_TA || corner == CORNER_BA))
+                    continue;
+                if ((i == DIR_L || i == DIR_R) && (corner == CORNER_BL || corner == CORNER_BR))
                     continue;
             }
             /*
@@ -949,6 +1002,9 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         LOG("start screen == NULL");
         return -1;
     }
+    if (destination->_debug_blocked) {
+        return -1;
+    }
 
     static uint64_t iter = 0;
     iter += 2;
@@ -989,6 +1045,8 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         if (pq_pop(pq, &distance, &node) < 0) 
             goto search_failed;
         if (node->pgsearch.iter == iter + 1)
+            continue;
+        if (ap_node_islocked(node))
             continue;
         assert(node->pgsearch.iter == iter);
         node->pgsearch.iter++;
@@ -1076,28 +1134,43 @@ ap_print_map_graph()
             struct ap_screen * screen = map_screens[XYMAPSCREEN(xy)];
             if (screen == NULL || !XYEQ(screen->tl, xy)) continue;
 
-            //fprintf(graphf, "subgraph cluster_%d { color=black; label=\"%s\"\n", cluster++, screen->name);
+            fprintf(graphf, "subgraph cluster_%d { color=black; label=\"%s\"\n", screen->id, screen->name);
+            for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+                const char *shape = "oval";
+                switch (node->type) {
+                case NODE_TRANSITION: shape = "box"; break;
+                case NODE_CHEST: shape = "house"; break;
+                case NODE_ITEM: shape = "house"; break;
+                case NODE_SWITCH: shape = "parallelogram"; break;
+                default: break;
+                }
+                const char *special = "";
+                if (node->_debug_blocked) {
+                    special = "fillcolor=grey";
+                }
+                fprintf(graphf, " n%p [label=\"%s\" shape=%s %s]\n", node, node->name, shape, special);
+            }
+            fprintf(graphf, "}\n");
+
             for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
                 struct xy node_mid = XYMID(node->tl, node->br);
-                fprintf(graphf, " n%p [label=\"%s\"]\n", node, node->name);
-
                 if (XYL1DIST(link, node_mid) < link_min_dist) {
                     link_min_dist = XYL1DIST(link, node_mid);
                     link_nearest_node = node;
                 }
 
                 if (node->adjacent_node != NULL) {
-                    fprintf(graphf, " n%p -> n%p [label=%s color=purple];\n", node, node->adjacent_node, dir_names[node->adjacent_direction]);
+                    fprintf(graphf, " n%p -> n%p [label=%s color=purple]\n", node, node->adjacent_node, dir_names[node->adjacent_direction]);
                 }
 
                 for (struct ap_node * node2 = node->next; node2 != screen->node_list; node2 = node2->next) {
+                    if (node->type != NODE_TRANSITION && node2->type != NODE_TRANSITION) continue;
                     int dist = ap_pathfind_local(screen, XYMID(node->tl, node->br), node2->tl, node2->br, false);
                     if (dist >= 0) {
                         fprintf(graphf, " n%p -> n%p [color=blue dir=both]\n", node, node2);
                     }
                 }
             }
-            //fprintf(graphf, "}\n");
         }
     }
 
@@ -1109,7 +1182,7 @@ ap_print_map_graph()
     fprintf(graphf, " n%p [color=green];\n", link_nearest_node);
     fprintf(graphf, "}\n");
     fclose(graphf);
-    LOG("Exported map graph");
+    LOG("Exported map graph to full_map.dot");
 }
 
 void
@@ -1225,6 +1298,8 @@ ap_print_state()
         struct ap_screen * screen = map_screens[i];
         if (screen == NULL)
             continue;
+        if (XYMAPSCREEN(screen->tl) != i)
+            continue;
         fprintf(screenf, "[screen %s]\n", screen->name);
         for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
             struct ap_node n;
@@ -1276,16 +1351,19 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
             continue;
         if (node->adjacent_direction != new_node->adjacent_direction)
             continue;
-        if (!XYIN(new_node->tl, node->tl, node->br) || !XYIN(new_node->br, node->tl, node->br))
-            continue;
-        //assert(node->adjacent_screen == new_node->adjacent_screen);
-        assert_bp(node->tile_attr == new_node->tile_attr);
+        if (node->type != NODE_SPRITE) {
+            if (!XYIN(new_node->tl, node->tl, node->br) || !XYIN(new_node->br, node->tl, node->br))
+                continue;
+            //assert(node->adjacent_screen == new_node->adjacent_screen);
+            // XXX This has a lot of false positives
+            assert_bp(node->tile_attr == new_node->tile_attr);
 
-        //LOG("duplicate node %s == %s", node->name, new_node->name);
+            //LOG("duplicate node %s == %s", node->name, new_node->name);
 
-        // Merge in new information???
-        if (!XYEQ(node->tl, new_node->tl) || !XYEQ(node->br, new_node->br))
-            LOG("node tl/br changed: before: " PRIBBV " after: " PRIBBV, PRIBBVF(*node), PRIBBVF(*new_node));
+            // Merge in new information???
+            if (!XYEQ(node->tl, new_node->tl) || !XYEQ(node->br, new_node->br))
+                LOG("node tl/br changed: before: " PRIBBV " after: " PRIBBV, PRIBBVF(*node), PRIBBVF(*new_node));
+        }
 
         node->tl = new_node->tl;
         node->br = new_node->br;
@@ -1361,12 +1439,21 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
     case NODE_SWITCH:
         ap_goal_add(GOAL_EXPLORE, new_node);
         break;
+    case NODE_SPRITE:
+        if (ap_sprite_attrs[new_node->sprite_type] & SPRITE_ATTR_TALK) 
+            ap_goal_add(GOAL_NPC, new_node);
+        else if (ap_sprite_attrs[new_node->sprite_type] & SPRITE_ATTR_ITEM) 
+            ap_goal_add(GOAL_EXPLORE, new_node);
     case NODE_NONE:
     default:
         ;
     }
 
     if (strcmp(new_node->name, "0x198A D 4") == 0) {
+        new_node->_debug_blocked = false;
+    } else if (strcmp(new_node->name, "0x1483 L 3") == 0) {
+        new_node->_debug_blocked = true;
+    } else if (strcmp(new_node->name, "0x148A L 4 l") == 0) {
         new_node->_debug_blocked = true;
     }
 
@@ -1397,6 +1484,9 @@ ap_update_map_screen_nodes()
             if (*ap_ram.room_state & mask) {
                 // what to update?
             }
+            break;
+        case NODE_SPRITE:
+            break;
         case NODE_CHEST:
         case NODE_ITEM:
         case NODE_TRANSITION:
@@ -1443,10 +1533,30 @@ ap_update_map_screen(bool force)
             screen = calloc(1, sizeof *screen);
             screen->tl = cell_tl;
             screen->br = cell_br;
+            screen->id = (screen->tl.x >> 8) | (screen->tl.y & 0xFF00);
+            const char * suffix = "";
+            if (XYINDOORS(screen->tl)) {
+                if (XYONUPPER(screen->tl)) {
+                    screen->id &= ~0x2;
+                    suffix = " ^";
+                } else {
+                    suffix = " v";
+                }
+            }
+            for (const struct ap_screen_info * info = ap_screen_infos; info->id != (uint16_t) -1; info++) {
+                if (info->id == screen->id) {
+                    screen->info = info;
+                    break;
+                }
+            }
             LL_INIT(screen->node_list);
-            snprintf(screen->name, sizeof screen->name, PRIXYV " x " PRIXYV, PRIXYVF(cell_tl), PRIXYVF(cell_br));
+            if (screen->info) {
+                snprintf(screen->name, sizeof screen->name, "%s%s " PRIXY " x " PRIXY, screen->info->name, suffix, PRIXYF(cell_tl), PRIXYF(cell_br));
+            } else {
+                snprintf(screen->name, sizeof screen->name, "%#06x%s " PRIXYV " x " PRIXYV, screen->id, suffix, PRIXYVF(cell_tl), PRIXYVF(cell_br));
 
-            LOG(TERM_BOLD("Screen size: " PRIXY), PRIXYF(XYOP1(XYOP2(cell_br, -, cell_tl), / 0x100 + 1)));
+            }
+
             struct xy xy;
             for (xy.y = cell_tl.y; xy.y < cell_br.y; xy.y += 0x100) {
                 for (xy.x = cell_tl.x; xy.x < cell_br.x; xy.x += 0x100) {
@@ -1750,7 +1860,28 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             }
             ap_screen_commit_node(screen, &new_node);
             new_node_count++;
+        }
+    }
+
+    for (size_t i = 0; i < 16; i++) {
+        if (ap_ram.sprite_type[i] == 0)
+            continue;
+        uint8_t sprite_type = ap_ram.sprite_type[i];
+        uint16_t sprite_attrs = ap_sprite_attrs[sprite_type];
+        if (sprite_attrs & SPRITE_ATTR_NODE) {
+            new_node->tl = ap_sprite_xy(i);
+            if (!XYIN(new_node->tl, screen->tl, screen->br)) {
+                LOG("Sprite %zu out of screen", i);
+            } else {
+                new_node->type = NODE_SPRITE;
+                new_node->br = XYOP1(new_node->tl, + 15);
+                new_node->sprite_type = sprite_type;
+                new_node->sprite_subtype = ap_ram.sprite_subtype1[i] | (ap_ram.sprite_subtype2[i] << 8);
+                snprintf(new_node->name, sizeof new_node->name, "sprite %#x.%#x %s", new_node->sprite_type, new_node->sprite_subtype, ap_sprite_attr_name(sprite_type));
+                ap_screen_commit_node(screen, &new_node);
+                new_node_count++;
             }
+        }
     }
 }
 
@@ -1771,15 +1902,15 @@ ap_map_record_transition_from(struct ap_node * src_node)
     for (struct ap_node * node = dst_screen->node_list->next; node != dst_screen->node_list; node = node->next) {
         if (node->type != NODE_TRANSITION)
             continue;
-        if (!XYEQ(dir_dxy[node->adjacent_direction], XYOP1(dir_dxy[src_node->adjacent_direction], * -1)))
+        if (dir_opp[node->adjacent_direction] != src_node->adjacent_direction)
             continue;
-        if (!XYIN(dst_xy, node->tl, node->br)) 
+        if (XYL1BOXDIST(dst_xy, node->tl, node->br))
             continue;
         dst_node = node;
         break;
     }
     if (dst_node == NULL) {
-        LOG("Warning! dst_node is NULL so making own node");
+        LOGB("Warning! dst_node is NULL so making own node");
         static struct ap_node * new_node = NULL;
         if (new_node == NULL)
             new_node = NONNULL(calloc(1, sizeof *new_node));
@@ -1802,6 +1933,7 @@ ap_map_record_transition_from(struct ap_node * src_node)
     }
     assert(dst_node != NULL);
 
+    LOGB("Attaching nodes from transition: %s <-> %s", dst_node->name, src_node->name);
     src_node->adjacent_node = dst_node;
     dst_node->adjacent_node = src_node;
 
@@ -1811,4 +1943,115 @@ ap_map_record_transition_from(struct ap_node * src_node)
 bool
 ap_node_islocked(struct ap_node * node) {
     return (node->tile_attr == 0x82 || node->tile_attr == 0x83) && *ap_ram.room_trap_doors && ap_update_map_screen(false) == node->screen;
+}
+
+void
+ap_map_export(const char * filename) {
+    FILE * f = fopen(filename, "w");
+    if (f == NULL) return;
+    for (size_t s = 0; s < 0x100 * 0x100; s++) {
+        struct ap_screen *screen = map_screens[s];
+        if (screen == NULL) continue;
+        if (XYMAPSCREEN(screen->tl) != s) continue;
+        fprintf(f, ">%#06x %#06x,%#06x %#06x,%#06x # %s\n",
+                screen->id, screen->tl.x, screen->tl.y, screen->br.x, screen->br.y, screen->name);
+        for (const struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+            fprintf(f, "@%p %#06x,%#06x %#06x,%#06x",
+                    node, node->tl.x, node->tl.y, node->br.x, node->br.y);
+            fprintf(f, " %u %p %d %u %u %s\n",
+                    node->adjacent_direction, node->adjacent_node, node->tile_attr, node->sprite_type, node->sprite_subtype, node->name);
+        }
+        for (size_t y = 0; y < 0x80; y++) {
+            fprintf(f, "|");
+            for (size_t x = 0; x < 0x80; x++) {
+                fprintf(f, "%02x ", screen->attr_cache[y][x]);
+            }
+            fprintf(f, "\n");
+        }
+    }
+    fclose(f);
+}
+
+void
+ap_map_import(const char * filename) {
+    FILE * f = fopen(filename, "r");
+    if (f == NULL) return;
+    struct pm * pm = pm_create();
+    struct ap_screen *screen = NULL;
+    size_t attr_row = 0;
+    char *line = NULL;
+    size_t line_len = 0;
+    size_t line_number = 0;
+    while (getline(&line, &line_len, f) != -1) {
+        line_number++;
+        if (line[0] == '>') {
+            screen = NONNULL(calloc(1, sizeof *screen));
+            int rc = sscanf(line, ">0x%hx 0x%hx,0x%hx 0x%hx,0x%hx",
+                &screen->id, &screen->tl.x, &screen->tl.y, &screen->br.x, &screen->br.y);
+            assert_bp(rc == 5);
+            for (const struct ap_screen_info * info = ap_screen_infos; info->id != (uint16_t) -1; info++) {
+                if (info->id == screen->id) {
+                    screen->info = info;
+                    break;
+                }
+            }
+            LL_INIT(screen->node_list);
+            const char * suffix = "";
+            if (XYINDOORS(screen->tl)) {
+                if (XYONUPPER(screen->tl)) {
+                    screen->id &= ~0x2;
+                    suffix = " ^";
+                } else {
+                    suffix = " v";
+                }
+            }
+            if (screen->info) {
+                snprintf(screen->name, sizeof screen->name, "%s%s " PRIXY " x " PRIXY, screen->info->name, suffix, PRIXYF(screen->tl), PRIXYF(screen->br));
+            } else {
+                snprintf(screen->name, sizeof screen->name, "%#06x%s " PRIXYV " x " PRIXYV, screen->id, suffix, PRIXYVF(screen->tl), PRIXYVF(screen->br));
+
+            }
+
+            struct xy xy;
+            for (xy.y = screen->tl.y; xy.y < screen->br.y; xy.y += 0x100) {
+                for (xy.x = screen->tl.x; xy.x < screen->br.x; xy.x += 0x100) {
+                    map_screens[XYMAPSCREEN(xy)] = screen;
+                    map_screen_mask_x[xy.x / 0x100] = true;
+                    map_screen_mask_y[xy.y / 0x100] = true;
+                }
+            }
+
+            attr_row = 0;
+        } else if (line[0] == '@') {
+            assert(screen != NULL);
+            struct ap_node * node = NONNULL(calloc(1, sizeof *node));
+            void * node_ptr = 0;
+            void * adj_node_ptr = 0;
+            int rc = sscanf(line, "@%p 0x%hx,0x%hx 0x%hx,0x%hx %hhu %p %hhd %hhu %hu %[^\n]",
+                &node_ptr, &node->tl.x, &node->tl.y, &node->br.x, &node->br.y,
+                &node->adjacent_direction, &adj_node_ptr, &node->tile_attr, &node->sprite_type, &node->sprite_subtype, node->name);
+            assert_bp(rc == 11);
+            assert(pm_set(pm, (uintptr_t) node_ptr, node) == 0);
+            if (adj_node_ptr != 0) {
+                assert(pm_get(pm, (uintptr_t) adj_node_ptr, (void **) &node->adjacent_node) == 0);
+            }
+            LL_PUSH(screen->node_list, node);
+        } else if (line[0] == '|') {
+            assert(screen != NULL);
+            assert(attr_row < 0x80);
+            char * buf = &line[1];
+            for (size_t i = 0; i < 0x80; i++) {
+                char * attr = strsep(&buf, " \n");
+                screen->attr_cache[attr_row][i] = strtoul(attr, NULL, 16);
+            }
+            attr_row++;
+        } else {
+            LOG("unexpected line #%zu: %s", line_number, line);
+            assert(0);
+        }
+    }
+    free(line);
+    size_t unmatched_pm = pm_destroy(pm);
+    LOG("unmapped: %zu", unmatched_pm);
+    assert_bp(unmatched_pm == 0);
 }

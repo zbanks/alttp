@@ -24,6 +24,7 @@ static bool ap_new_goals = true;
 
 static struct ap_goal * item_goal_flippers = NULL;
 static struct ap_goal * item_goal_bombs = NULL;
+static struct ap_goal * item_goal_uncle = NULL;
 
 void
 ap_print_goals()
@@ -99,6 +100,7 @@ ap_print_task(const struct ap_task * task)
     case TASK_LIFT_POT:
     case TASK_TRANSITION:
     case TASK_STEP_OFF_SWITCH:
+    case TASK_TALK_NPC:
         buf += sprintf(buf, " [node=%s]", (task->node ? task->node->name : "(null)"));
         break;
     case TASK_SET_INVENTORY:
@@ -197,6 +199,16 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             if (task->state == 2) { JOYPAD_SET(A); task->state = 3; }
             else { JOYPAD_CLEAR(A); task->state = 2; }
             if (*ap_ram.item_recv_method == 1) return RC_DONE;
+        }
+        break;
+    case TASK_TALK_NPC:
+        LOGB("TODO");
+        switch (task->state) {
+        case 0:
+            task->timeout = 4;
+            task->state++;
+        case 1:
+            break;
         }
         break;
     case TASK_LIFT_POT:
@@ -418,6 +430,7 @@ retry_new_goal:;
     switch (min_goal->type) {
     case GOAL_CHEST:
     case GOAL_PICKUP:
+    case GOAL_NPC:
     case GOAL_EXPLORE:;
         // For debugging: set inventory
         //task = ap_task_prepend(); 
@@ -474,6 +487,11 @@ retry_new_goal:;
         task->direction = min_goal->node->adjacent_direction;
         snprintf(task->name, sizeof task->name, "final transition %s", dir_names[task->direction]);
         break;
+    case GOAL_NPC:
+        task = ap_task_append();
+        task->type = TASK_TALK_NPC;
+        task->node = min_goal->node;
+        snprintf(task->name, sizeof task->name, "npc");
     default:
         LOG("Invalid goal type: %d", min_goal->type);
     }

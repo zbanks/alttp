@@ -8,7 +8,16 @@
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
     *ap_emu->info_string_ptr = ap_info_string;
-
+    if (frame == 0) {
+        LOG("importing");
+        ap_map_import("map_state_40536.txt");
+        ap_map_export("map_state_reflect.txt");
+        ap_print_state();
+        ap_print_map_full();
+        ap_graph_print();
+        //ap_print_goals();
+        //exit(0);
+    }
 
     if (JOYPAD_EVENT(Y)) {
         LOG("dumping");
@@ -69,7 +78,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     }
 
     ap_debug = JOYPAD_TEST(START);
-    ap_update_map_screen(false);
+    struct ap_screen * screen = ap_update_map_screen(false);
     if (*ap_ram.link_state != LINK_STATE_GROUND) {
         //LOG("Link state: %#x", *ap_ram.link_state);
     } else {
@@ -91,15 +100,18 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     if (x++ == 4000) {
         ap_print_map_full();
         ap_graph_print();
+        char filename[128];
+        snprintf(filename, sizeof filename, "map_state.2.%u.txt", frame);
+        ap_map_export(filename);
         x = 0;
     }
 
     // sram_overworld_state & 0x2 = bomb open
 
     if (*ap_ram.in_building) {
-        INFO("Room: %x St: %4x SR: %4x", *ap_ram.dungeon_room, *ap_ram.room_state, ap_ram.sram_room_state[*ap_ram.dungeon_room]);
+        INFO("Room: %#06x St: %4x SR: %4x      %s", screen->id, *ap_ram.room_state, ap_ram.sram_room_state[*ap_ram.dungeon_room], screen->name);
     } else {
-        INFO("Ovrwld: %x St: %2x", *ap_ram.overworld_index, ap_ram.sram_overworld_state[*ap_ram.overworld_index]);
+        INFO("Ovrwld: %#06x St: %2x               %s", screen->id, ap_ram.sram_overworld_state[*ap_ram.overworld_index], screen->name);
     }
     //LOG("Link %d %d %u %u", *ap_ram.link_dx, *ap_ram.link_dy, *ap_ram.link_x, *ap_ram.link_y);
     //INFO("citem: %#x", *ap_ram.current_item);

@@ -50,6 +50,7 @@ DIR_LIST
     X(CHEST) \
     X(TRANSITION) \
     X(SWITCH) \
+    X(SPRITE) \
 
 struct ap_screen;
 struct ap_node {
@@ -72,6 +73,8 @@ NODE_TYPE_LIST
 #undef X
     } type;
     uint8_t tile_attr;
+    uint8_t sprite_type;
+    uint16_t sprite_subtype;
     bool _reachable;
     bool _debug_blocked;
     char name[32];
@@ -87,7 +90,9 @@ NODE_TYPE_LIST
 struct ap_screen {
     struct xy tl;
     struct xy br;
+    uint16_t id;
     struct ap_node node_list[1];
+    const struct ap_screen_info * info;
     char name[64];
     uint8_t attr_cache[0x80][0x80];
 };
@@ -136,3 +141,9 @@ ap_map_record_transition_from(struct ap_node * src_node);
 
 bool
 ap_node_islocked(struct ap_node * node);
+
+void
+ap_map_import(const char * filename);
+
+void
+ap_map_export(const char * filename);
