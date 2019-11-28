@@ -87,6 +87,9 @@ NODE_TYPE_LIST
     } pgsearch;
 };
 
+#define PRINODE "%s%s%s"
+#define PRINODEF(n) ((n) ? (n)->name : "(null)"), ((n) && (n)->screen ? " screen=" : ""), ((n) && (n)->screen ? (n)->screen->name : "")
+
 struct ap_screen {
     struct xy tl;
     struct xy br;
@@ -97,6 +100,11 @@ struct ap_screen {
     uint8_t attr_cache[0x80][0x80];
 };
 
+struct ap_script {
+    const char * sequence;
+    struct xy start;
+};
+
 struct xy
 ap_link_xy();
 
@@ -105,6 +113,9 @@ ap_sprite_xy(uint8_t i);
 
 void
 ap_map_bounds(struct xy * topleft, struct xy * bottomright);
+
+struct xy
+ap_map16_to_xy(struct xy tl, uint16_t map16);
 
 void
 ap_print_map_screen(struct ap_screen * screen);

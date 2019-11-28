@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Pointer map (sorted list)
+// Pointer Map
 
 struct pm;
 

@@ -31,10 +31,19 @@ ap_print_goals()
 {
     printf("Goal list: (current index=%#x)\n", XYMAPSCREEN(ap_link_xy()));
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
-        if (goal->node != NULL && goal->node->adjacent_node != NULL)
-            printf("    * " PRIGOAL " to %s\n", PRIGOALF(goal), goal->node->adjacent_node->name);
-        else
-            printf("    * " PRIGOAL " to umapped\n", PRIGOALF(goal));
+        if (goal->type == GOAL_EXPLORE) {
+            if (goal->node != NULL && goal->node->adjacent_node != NULL) {
+                printf("    * " PRIGOAL " to %s\n", PRIGOALF(goal), goal->node->adjacent_node->name);
+            } else {
+                printf("    * " PRIGOAL " to umapped\n", PRIGOALF(goal));
+            }
+        } else {
+            if (goal->node != NULL && goal->node->screen != NULL) {
+                printf("    * " PRIGOAL " on %s\n", PRIGOALF(goal), goal->node->screen->name);
+            } else {
+                printf("    * " PRIGOAL "\n", PRIGOALF(goal));
+            }
+        }
         
     }
     printf("\n");
@@ -101,7 +110,7 @@ ap_print_task(const struct ap_task * task)
     case TASK_TRANSITION:
     case TASK_STEP_OFF_SWITCH:
     case TASK_TALK_NPC:
-        buf += sprintf(buf, " [node=%s]", (task->node ? task->node->name : "(null)"));
+        buf += sprintf(buf, " [node=" PRINODE "]", PRINODEF(task->node));
         break;
     case TASK_SET_INVENTORY:
         buf += sprintf(buf, " [item=%#x]", task->item);
@@ -131,35 +140,63 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
 {
     int rc;
     struct ap_screen * screen = ap_update_map_screen(false);
+    if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node)) {
+        if (task->node->lock_node == NULL)
+            return RC_FAIL;
+        // Prepend an unlock task
+        struct ap_task * new_task = ap_task_prepend(); 
+        new_task->type = TASK_GOTO_POINT;
+        new_task->node = task->node->lock_node;
+        snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
+        // Maybe we need to step off first
+        new_task = ap_task_prepend(); 
+        new_task->type = TASK_STEP_OFF_SWITCH;
+        new_task->node = task->node->lock_node;
+        snprintf(new_task->name, sizeof new_task->name, "step off");
+        LOGB("Locked door; prepending switch steps");
+        return RC_INPR; // XXX should there be RC_RTRY?
+    }
+
+    uint8_t module_index = *ap_ram.module_index;
+    uint8_t submodule_index = *ap_ram.submodule_index;
+    // Dialog, Textbox, Inventory Screen
+    if (module_index == 0x0E) {
+        if (submodule_index == 0x01) {
+            // Inventory
+            if (task->type != TASK_SET_INVENTORY) {
+                JOYPAD_MASH(START);
+            }
+        } else {
+            // Dialog?
+            LOGB("Mashing dialog; submodule = %#x", submodule_index);
+            JOYPAD_MASH(A);
+        }
+    }
+
     switch (task->type) {
     case TASK_STEP_OFF_SWITCH:
+        if (!*ap_ram.link_on_switch && task->state < 5) {
+            task->state = 5;
+            task->timeout = 16;
+        }
         switch (task->state) {
         case 0:
             task->timeout = 32;
             task->state++;
-        case 1:
-            if (!*ap_ram.link_on_switch)
+            task->state += rand() % 4;
+            break;
+            // FIXME
+            // Going in a random direction means it usually works if we retry a few times
+        case 1: JOYPAD_SET(LEFT); return RC_INPR;
+        case 2: JOYPAD_SET(RIGHT); return RC_INPR;
+        case 3: JOYPAD_SET(UP); return RC_INPR;
+        case 4: JOYPAD_SET(DOWN); return RC_INPR;
+        case 5:
+            if (task->timeout == 1)
                 return RC_DONE;
-            JOYPAD_SET(LEFT); // FIXME
-            return RC_INPR;
         }
         break;
     case TASK_GOTO_POINT:
-        if (task->node != NULL && ap_node_islocked(task->node)) {
-            if (task->node->lock_node == NULL)
-                return RC_FAIL;
-            // Prepend an unlock task
-            struct ap_task * new_task = ap_task_prepend(); 
-            new_task->type = TASK_GOTO_POINT;
-            new_task->node = task->node->lock_node;
-            snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
-            // Maybe we need to step off first
-            new_task = ap_task_prepend(); 
-            new_task->type = TASK_STEP_OFF_SWITCH;
-            new_task->node = task->node->lock_node;
-            snprintf(new_task->name, sizeof new_task->name, "step off");
-            return RC_INPR; // XXX should there be RC_RTRY?
-        }
         switch (task->state) {
         case 0:
             rc = ap_pathfind_node(task->node);
@@ -198,18 +235,37 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             JOYPAD_CLEAR(UP);
             if (task->state == 2) { JOYPAD_SET(A); task->state = 3; }
             else { JOYPAD_CLEAR(A); task->state = 2; }
-            if (*ap_ram.item_recv_method == 1) return RC_DONE;
+            if (*ap_ram.item_recv_method == 1) {
+                task->timeout = 64;
+                task->state = 4;
+            }
+            break;
+        case 4:
+            if (*ap_ram.item_recv_method != 1) return RC_DONE;
         }
         break;
     case TASK_TALK_NPC:
-        LOGB("TODO");
+        LOGB("TODO"); // This just does uncle
+        LOG("timeout: %d; state: %d; recving: %x; push: %x; item_recv_method: %x; link_state: %x", task->timeout, task->state, *ap_ram.recving_item, *ap_ram.push_timer, *ap_ram.item_recv_method, *ap_ram.link_state);
         switch (task->state) {
         case 0:
-            task->timeout = 4;
+            task->timeout = 64;
             task->state++;
         case 1:
+            JOYPAD_SET(UP);
+            if (*ap_ram.link_state == 0x15) { // Holding item (uncle)
+                task->timeout = 128;
+                task->state++;
+            }
+            break;
+        case 2:
+            JOYPAD_CLEAR(UP);
+            if (*ap_ram.link_state != 0x15) {
+                return RC_DONE;
+            }
             break;
         }
+        return RC_DONE;
         break;
     case TASK_LIFT_POT:
         switch (task->state) {
@@ -308,6 +364,19 @@ ap_goal_score(struct ap_goal * goal)
 
     struct ap_screen * screen = ap_update_map_screen(false);
 
+    /*
+    bool is_accessible = false;
+    for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+        if (node->type == NODE_TRANSITION && node->adjacent_node != NULL) {
+            is_accessible = true;
+            break;
+        }
+    }
+    if (!is_accessible) {
+        return GOAL_SCORE_UNSATISFIABLE;
+    }
+    */
+
     int score = 0;
     if (goal->node != NULL) {
         struct xy link = ap_link_xy();
@@ -316,14 +385,17 @@ ap_goal_score(struct ap_goal * goal)
     score += goal->attempts * 100; //1000000;
     switch (goal->type) {
     case GOAL_PICKUP:
-    case GOAL_CHEST:
         score += 0;
         if (goal->node->screen != screen)
             score = GOAL_SCORE_UNSATISFIABLE;
         break;
+    case GOAL_CHEST:
+    case GOAL_NPC:
+        //score += 1000000;
+        break;
     case GOAL_EXPLORE:
         //if (goal->node->type != NODE_SWITCH)
-            score += 1000;
+            //score += 1000;
         if (goal->node->adjacent_node != NULL)
             score = GOAL_SCORE_COMPLETE;
         break;
@@ -351,6 +423,7 @@ ap_goal_complete(struct ap_goal * goal)
     switch (goal->type) {
     case GOAL_PICKUP:
     case GOAL_CHEST:
+    case GOAL_NPC:
         //LL_EXTRACT(goal->node->node_parent, goal->node);
         //free(goal->node);
         break;

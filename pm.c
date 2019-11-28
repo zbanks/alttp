@@ -10,8 +10,8 @@ struct pm {
     struct pm_kv {
         uintptr_t key;
         union {
-            void * value;
-            void ** value_p;
+            void * value;       // for values
+            void ** value_p;    // for refs
         };
     } * values;
     struct pm_kv * refs;
@@ -42,7 +42,6 @@ static int pm_kv_cmp(const void * _a, const void * _b) {
 
 size_t pm_destroy(struct pm * pm) {
     qsort(pm->values, pm->values_count, sizeof *pm->values, &pm_kv_cmp);
-    //qsort(pm->refs, pm->refs, sizeof *pm->refs, &pm_kv_cmp);
     size_t unmatched = 0;
     for (size_t i = 0; i < pm->refs_count; i++) {
         struct pm_kv * ref = &pm->refs[i];

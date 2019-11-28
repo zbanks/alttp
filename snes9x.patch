@@ -1,0 +1,58 @@
+diff --git a/unix/unix.cpp b/unix/unix.cpp
+index cc82fa5..8d49644 100644
+--- a/unix/unix.cpp
++++ b/unix/unix.cpp
+@@ -237,6 +237,7 @@
+ #include "debug.h"
+ #endif
+ #include "statemanager.h"
++#include "../alttp2/alttp_public.h"
+ 
+ #ifdef NETPLAY_SUPPORT
+ #ifdef _DEBUG
+@@ -353,6 +354,16 @@ static void InitJoysticks (void);
+ static void ReadJoysticks (void);
+ #endif
+ 
++static uint8_t * alttp_base(uint32_t addr) {
++    return S9xGetMemPointer(addr);
++}
++static int alttp_save(const char * filename) {
++    return S9xFreezeGame(filename);
++}
++static int alttp_load(const char * filename) {
++    return S9xUnfreezeGame(filename);
++}
++static struct ap_snes9x alttp;
+ 
+ void _splitpath (const char *path, char *drive, char *dir, char *fname, char *ext)
+ {
+@@ -1889,6 +1900,12 @@ int main (int argc, char **argv)
+        bool8   NP_Activated = Settings.NetPlay;
+ #endif
+ 
++    alttp.base = alttp_base;
++    alttp.save = alttp_save;
++    alttp.load = alttp_load;
++    alttp.info_string_ptr = &GFX.InfoString;
++    ap_init(&alttp);
++
+        while (1)
+        {
+        #ifdef NETPLAY_SUPPORT
+@@ -1933,8 +1950,13 @@ int main (int argc, char **argv)
+                                rewinding = stateMan.pop();
+                        else if(IPPU.TotalEmulatedFrames % unixSettings.rewindGranularity == 0)
+                                stateMan.push();
+-
++            
++            uint16 jpb = MovieGetJoypad(0);
++            uint16 old_jpb = jpb;
++            ap_tick(IPPU.TotalEmulatedFrames, &jpb);
++            MovieSetJoypad(0, jpb);
+                        S9xMainLoop();
++            MovieSetJoypad(0, old_jpb);
+                }
+ 
+        #ifdef NETPLAY_SUPPORT
+

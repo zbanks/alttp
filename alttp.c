@@ -8,13 +8,22 @@
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
     *ap_emu->info_string_ptr = ap_info_string;
+    ap_sprites_update();
+
+    // Cheating!
+    *(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;
+    *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
+    *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
+
     if (frame == 0) {
         LOG("importing");
-        ap_map_import("map_state_40536.txt");
+        ap_map_import("map_state.4.00131734.txt");
+    } else if (frame == 100 && false) {
         ap_map_export("map_state_reflect.txt");
         ap_print_state();
         ap_print_map_full();
         ap_graph_print();
+        ap_print_map_screen(NULL);
         //ap_print_goals();
         //exit(0);
     }
@@ -35,17 +44,22 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 // 0x07 In house/dungeon
 // 0x09 In OW
 // 0x0B Overworld Mode (special overworld)
+// 0x0E Dialog or Inventory
     uint8_t module_index = *ap_ram.module_index;
+    uint8_t submodule_index = *ap_ram.submodule_index;
+    //LOG("Module: %x; Submodule: %x", module_index, submodule_index);
+    INFO("Module: %#x; Submodule: %#x; %d", module_index, submodule_index, frame);
     switch (module_index) {
     case 0x07:
     case 0x09:
     case 0x0B:
-    case 0x0E:
+        if (submodule_index != 0x00 && submodule_index != 0x10) return;
         break;
         //if (frame % 2) JOYPAD_SET(START);
         // fallthrough
+    case 0x0E:
+        break;
     default:
-        //INFO("Module Index: %#x %d", module_index, frame);
         return;
     }
 
@@ -55,6 +69,8 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 
     //INFO("a: %d b: %d", *(uint16_t *)ap_emu->base(0x7E0410), *(uint16_t *)ap_emu->base(0x7E0412));
 
+    // May be able to use submodule index (0x1, 0xA) to find transitions
+    /*
     static uint16_t last_map = -1; 
     static uint16_t transition_counter = 0;
     if (last_map == XYMAPSCREEN(topleft)) {
@@ -76,6 +92,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
             return;
         }
     }
+    */
 
     ap_debug = JOYPAD_TEST(START);
     struct ap_screen * screen = ap_update_map_screen(false);
@@ -101,18 +118,20 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         ap_print_map_full();
         ap_graph_print();
         char filename[128];
-        snprintf(filename, sizeof filename, "map_state.2.%u.txt", frame);
+        snprintf(filename, sizeof filename, "map_state.5.%08u.txt", frame);
         ap_map_export(filename);
         x = 0;
     }
 
     // sram_overworld_state & 0x2 = bomb open
 
+    /*
     if (*ap_ram.in_building) {
-        INFO("Room: %#06x St: %4x SR: %4x      %s", screen->id, *ap_ram.room_state, ap_ram.sram_room_state[*ap_ram.dungeon_room], screen->name);
+        INFO("%X Room: %#06x St: %4x SR: %4x      %s", module_index, screen->id, *ap_ram.room_state, ap_ram.sram_room_state[*ap_ram.dungeon_room], screen->name);
     } else {
-        INFO("Ovrwld: %#06x St: %2x               %s", screen->id, ap_ram.sram_overworld_state[*ap_ram.overworld_index], screen->name);
+        INFO("%X Ovrwld: %#06x St: %2x               %s", module_index, screen->id, ap_ram.sram_overworld_state[*ap_ram.overworld_index], screen->name);
     }
+    */
     //LOG("Link %d %d %u %u", *ap_ram.link_dx, *ap_ram.link_dy, *ap_ram.link_x, *ap_ram.link_y);
     //INFO("citem: %#x", *ap_ram.current_item);
 
@@ -122,8 +141,4 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         //JOYPAD_SET(A);
     }
 
-    // Cheating!
-    *(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;
-    *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
-    *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
 }

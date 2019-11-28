@@ -13,6 +13,8 @@
 #define STRINGIFY(x) STRINGIFY2(x)
 #define STRINGIFY2(x) # x
 
+#define ARRAYLEN(x) (sizeof(x) / sizeof(*x))
+
 #define TERM_BOLD(x)    "\033[1m"  x "\033[0m"
 #define TERM_RED(x)     "\x1b[31m" x "\x1b[0m"
 #define TERM_GREEN(x)   "\x1b[32m" x "\x1b[0m"

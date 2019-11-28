@@ -41,8 +41,8 @@ ap_goal_from_graph(struct ap_graph * graph) {
     return (struct ap_goal *) p;
 }
 
-#define PRIGOAL "%s %s [node=%s]"
-#define PRIGOALF(g) ap_goal_type_names[(g)->type], (g)->name, ((g)->node ? (g)->node->name : "(null)")
+#define PRIGOAL "%s %s [node=" PRINODE "]"
+#define PRIGOALF(g) ap_goal_type_names[(g)->type], (g)->name, PRINODEF((g)->node)
 
 void
 ap_print_goals();

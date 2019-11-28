@@ -1,5 +1,6 @@
 #pragma once
 #include "ap_macro.h"
+#include "ap_math.h"
 #include "alttp_public.h"
 
 #define SNES_TR_MASK		((uint16_t) (1ul <<  4))
@@ -20,6 +21,7 @@
 #define JOYPAD_TEST(key) ((*joypad) & SNES_MASK(key))
 #define JOYPAD_SET(key) ((*joypad) |= SNES_MASK(key))
 #define JOYPAD_CLEAR(key) ((*joypad) &= (uint16_t) ~SNES_MASK(key))
+#define JOYPAD_MASH(key) ({ if(*ap_ram.frame_counter & 1) { JOYPAD_SET(key); } else { JOYPAD_CLEAR(key); } })
 #define JOYPAD_EVENT(btn) ({\
     static bool _debounce = false; \
     bool _ret = false; \
@@ -51,6 +53,7 @@
     X(dungeon_room,         uint16_t,  0x7E00A0)   \
     X(menu_part,            uint8_t,   0x7E00C8)   \
     X(current_item,         uint8_t,   0x7E0202)   \
+    X(recving_item,         uint8_t,   0x7E02D8)   \
     X(room_state,           uint16_t,  0x7E0400)   \
     X(room_layout,          uint8_t,   0x7E040E)   \
     X(room_trap_doors,      uint16_t,  0x7E0468)   \
@@ -63,8 +66,17 @@
     X(sprite_state,         uint8_t,   0x7E0DD0)   \
     X(sprite_type,          uint8_t,   0x7E0E20)   \
     X(sprite_subtype1,      uint8_t,   0x7E0E30)   \
+    X(sprite_interaction,   uint8_t,   0x7E0E60)   \
     X(sprite_subtype2,      uint8_t,   0x7E0E80)   \
     X(sprite_lower_level,   uint8_t,   0x7E0F20)   \
+    X(sprite_hitbox_idx,    uint8_t,   0x7E0F60)   \
+    X(hitbox_x_lo,          uint8_t,   0x06F735)   \
+    X(hitbox_x_hi,          uint8_t,   0x06F755)   \
+    X(hitbox_width,         uint8_t,   0x06F775)   \
+    X(hitbox_y_lo,          uint8_t,   0x06F795)   \
+    X(hitbox_y_hi,          uint8_t,   0x06F7B5)   \
+    X(hitbox_height,        uint8_t,   0x06F7D5)   \
+    X(block_data,           uint32_t,  0x7EF940)   \
     X(map_area,             uint16_t,  0x7E040A)   \
     X(map_y_offset,         uint16_t,  0x7E0708)   \
     X(map_y_mask,           uint16_t,  0x7E070A)   \
@@ -101,6 +113,7 @@
     X(sram_overworld_state, uint8_t,   0x7EF280)   \
     X(inventory_base,       uint8_t,   0x7EF33F)   \
     X(inventory_bombs,      uint8_t,   0x7EF343)   \
+    X(inventory_sword,      uint8_t,   0x7EF359)   \
     X(health_current,       uint8_t,   0x7EF36D)   \
     X(health_capacity,      uint8_t,   0x7EF36C)   \
 
@@ -125,6 +138,7 @@ extern struct ap_snes9x * ap_emu;
     X(BONK) /* Bonk rocks */ \
     X(SWCH) /* Floor button */ \
     X(STRS) /* Dungeon Stairs */ \
+    X(MERG) /* Merge with similar tiles */ \
 
 enum {
 #define X(d) CONCAT(_TILE_ATTR_INDEX_, d),
@@ -168,11 +182,11 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x2f] = TILE_ATTR_LDGE, // down right
 
     // Door transitions, unsure how to handle, see 0x8e & 0x8f
-    [0x30] = 0,
+    [0x30] = TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_MERG,
     [0x31] = 0,
     [0x32] = 0,
     [0x33] = 0,
-    [0x34] = 0,
+    [0x34] = TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_MERG,
     [0x35] = 0,
     [0x36] = 0,
     [0x37] = 0,
@@ -201,9 +215,10 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x5B] = TILE_ATTR_NODE | TILE_ATTR_CHST,
     [0x5C] = TILE_ATTR_NODE | TILE_ATTR_CHST,
     [0x5D] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x5E] = TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs up
-    [0x5F] = TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs down
+    [0x5E] = TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_STRS, // stairs up
+    [0x5F] = TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_STRS, // stairs down
 
+    // Special pots or pushable blocks in a room
     [0x70] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
     [0x71] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
     [0x72] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
@@ -333,6 +348,7 @@ enum ap_link_state {
     X(TALK) /* Talk for progression item */ \
     X(FLLW) /* Thing that can follow you */ \
     X(NODE) /* Worth making a node for */ \
+    X(SUBT) /* Has subtype flags */ \
 
 enum {
 #define X(d) CONCAT(_SPRITE_ATTR_INDEX_, d),
@@ -345,9 +361,24 @@ SPRITE_ATTR_LIST
 #undef X
 };
 
+extern struct ap_sprite {
+    uint8_t type;
+    uint16_t subtype;
+    uint8_t state;
+    uint8_t interaction;
+
+    struct xy tl;
+    struct xy br;
+    struct xy hitbox_tl;
+    uint16_t attrs;
+} ap_sprites[16];
+
+void ap_sprites_update();
+
 extern const char * const ap_sprite_attr_names[];
-const char * ap_sprite_attr_name(uint8_t idx);
+const char * ap_sprite_attr_name(uint16_t attr);
 void ap_sprites_print();
+uint16_t ap_sprite_attrs_for_type(uint8_t type, uint16_t subtype);
 
 static const uint16_t ap_sprite_attrs[256] = {
     [0x00] = SPRITE_ATTR_ENMY, // Raven
@@ -471,9 +502,9 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x70] = SPRITE_ATTR_ENMY, // Splitting Fireballs from Helmasaur King
     [0x71] = SPRITE_ATTR_SWCH, // Leever
     [0x72] = 0, // Activator for the ponds (where you throw in items)
-    [0x73] = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE, // Links Uncle / Sage / Barrier that opens in the sanctuary
+    [0x73] = SPRITE_ATTR_SUBT, // Links Uncle / Sage / Barrier that opens in the sanctuary
     [0x74] = 0, // Red Hat Boy who runs from you
-    [0x75] = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE, // Bottle Vendor
+    [0x75] = SPRITE_ATTR_TALK | SPRITE_ATTR_BLOK | SPRITE_ATTR_NODE, // Bottle Vendor
     [0x76] = SPRITE_ATTR_FLLW | SPRITE_ATTR_BLOK, // Princess Zelda
     [0x77] = SPRITE_ATTR_ENMY, // Also Fire Faeries (seems like a different variety)
     [0x78] = SPRITE_ATTR_BLOK, // Village Elder
@@ -608,6 +639,16 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xF0] = 0, // Cane of Somaria Platform (same as 0xED but this index is not used)
     [0xF1] = 0, // Cane of Somaria Platform (same as 0xED but this index is not used)
     [0xF2] = SPRITE_ATTR_BLOK, // Medallion Tablet
+};
+
+struct ap_sprite_subtype {
+    uint8_t type;
+    uint16_t subtype;
+    uint16_t attrs;
+};
+
+static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
+    { .type = 0x73, .subtype = 0x0100, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE }, // Link's Uncle
 };
 
 // module_index

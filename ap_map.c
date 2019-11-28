@@ -29,8 +29,37 @@ NODE_TYPE_LIST
 static const struct ap_screen_info {
     uint16_t id;
     char name[40];
+    bool add_explore_goals;
 } ap_screen_infos[] = {
-    { .id = 0x060C, .name = "Ruins", },
+    // Light Overworld
+    { .id = 0x0402, .name = "North of Kak", },
+    { .id = 0x0406, .name = "Sanctuary Yard", },
+    { .id = 0x0408, .name = "Graveyard", },
+    { .id = 0x040c, .name = "Witches' Yard", },
+    { .id = 0x0606, .name = "Castle Yard", },
+    { .id = 0x060c, .name = "Ruins", },
+    { .id = 0x0600, .name = "Kak Village", .add_explore_goals = true, },
+    { .id = 0x0804, .name = "Smith's Yard", .add_explore_goals = true, },
+    { .id = 0x0a00, .name = "Maze Race" },
+    { .id = 0x0a02, .name = "Library Yard", .add_explore_goals = true, },
+    { .id = 0x0a04, .name = "Flute Grove", },
+    { .id = 0x0a08, .name = "Link's Yard", },
+    { .id = 0x0a68, .name = "Well Uncle", },
+    { .id = 0x0b68, .name = "Well Chest", },
+    { .id = 0x0c0a, .name = "Fortune Shore", },
+    // Overworld Interiors
+    { .id = 0x2161, .name = "Link's House", },
+    { .id = 0x2178, .name = "Library", },
+    { .id = 0x2188, .name = "Witches' Hut", },
+    { .id = 0x2198, .name = "Dam Chest", },
+    { .id = 0x2550, .name = "Fortune Teller", },
+    { .id = 0x1d58, .name = "Bat Cave Exit", },
+    { .id = 0x2548, .name = "Smiths' House", },
+    { .id = 0x1f68, .name = "Maze Race Entrance", },
+    { .id = 0x2388, .name = "Blind's House", .add_explore_goals = true, },
+    // Hyrule Castle
+    { .id = 0x0c48, .name = "HC Entrance", },
+    // Eastern Palace
     { .id = 0x1988, .name = "EP Entrance", },
     { .id = 0x1888, .name = "EP Hall 1", },
     { .id = 0x1688, .name = "EP Dodgeball", },
@@ -40,7 +69,6 @@ static const struct ap_screen_info {
     { .id = 0x1591, .name = "EP Chest&Ledge", },
     { .id = 0x1481, .name = "EP Crossover", },
     { .id = 0x1580, .name = "EP Stalfos", },
-    { .id = 0x0a68, .name = "Well Uncle", },
     { .id = -1 },
 };
 
@@ -70,23 +98,6 @@ ap_link_xy()
         }
     }
     return link;
-}
-
-struct xy
-ap_sprite_xy(uint8_t i) {
-    assert(i < 16);
-    struct xy sprite = XY(ap_ram.sprite_x_lo[i], ap_ram.sprite_y_lo[i]);
-    sprite.x += ap_ram.sprite_x_hi[i] << 8u;
-    sprite.y += ap_ram.sprite_y_hi[i] << 8u;
-
-    if (*ap_ram.in_building) {
-        sprite.x = ((sprite.x & ~0x1FF) << 2) | (sprite.x & 0x1FF);
-        sprite.x += 0x4000;
-        if (!*ap_ram.sprite_lower_level && ap_ram.sprite_type[i] != 0x50) {
-            sprite.x += 0x200;
-        }
-    }
-    return sprite;
 }
 
 static void
@@ -285,7 +296,7 @@ ap_screen_refresh_cache(struct ap_screen * screen)
     }
 }
 
-static struct xy
+struct xy
 ap_map16_to_xy(struct xy tl, uint16_t map16)
 {
     struct xy xy;
@@ -342,17 +353,15 @@ ap_print_map_screen(struct ap_screen * screen)
                 goto next_point;
             } 
             for (uint8_t i = 0; i < 16; i++) {
-                if (ap_ram.sprite_type[i] == 0) {
+                if (ap_sprites[i].type == 0) {
                     continue;
                 }
-                struct xy sprite_tl = ap_sprite_xy(i);
-                struct xy sprite_br = XYOP1(sprite_tl, + 15); // TODO?
-                if (XYIN(xy, sprite_tl, sprite_br) ||
-                    (inside && XYIN(XY(xy.x ^ 0x200, xy.y), sprite_tl, sprite_br))) {
+                if (XYIN(xy, ap_sprites[i].tl, ap_sprites[i].br) ||
+                    (inside && XYIN(XY(xy.x ^ 0x200, xy.y), ap_sprites[i].tl, ap_sprites[i].br))) {
                     if ((xy.x ^ xy.y) & 0x8) {
                         fprintf(mapf, TERM_MAGENTA("%02x "), tile_attr);
                     } else {
-                        fprintf(mapf, TERM_MAGENTA(TERM_BOLD("%02x ")), ap_ram.sprite_type[i]);
+                        fprintf(mapf, TERM_MAGENTA(TERM_BOLD("%02x ")), ap_sprites[i].type);
                     }
                     fprintf(mapimg, "%c%c%c", 255, px_shade / 4, 255);
                     goto next_point;
@@ -449,7 +458,24 @@ ap_set_targets(size_t count)
 int
 ap_follow_targets(uint16_t * joypad)
 {
+    static struct xy last_link = XY(0, 0);
+    static int stationary_link_count = 0;
     struct xy link = ap_link_xy();
+
+    if (XYEQ(last_link, link)) {
+        stationary_link_count++;
+    } else {
+        stationary_link_count = 0;
+    }
+    last_link = link;
+
+    if (stationary_link_count >= 128) {
+        LOGB("Stuck Link Detected! " PRIXY " en route to " PRIXY,
+            PRIXYF(link), PRIXYF(ap_targets[0]));
+        ap_target_timeout = 0;
+        stationary_link_count = 0;
+    }
+
     if (ap_target_timeout <= 0) {
         //INFO("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0]));
         LOG("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0]));
@@ -499,7 +525,7 @@ ap_follow_targets(uint16_t * joypad)
         return RC_FAIL;
     }
 
-    INFO("L:" PRIXY "; %zu:" PRIXY "; %d %#x", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout, *ap_ram.push_dir_bitmask);
+    //INFO("L:" PRIXY "; %zu:" PRIXY "; %d %#x", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout, *ap_ram.push_dir_bitmask);
     //LOG("L:" PRIXY "; %zu:" PRIXY "; %d", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout);
 
     if (link.x > target.x)
@@ -550,6 +576,21 @@ ap_follow_targets(uint16_t * joypad)
     else if (link.y < target.y && (ap_link_tile_attr(XYOP2(link, +, XY(0, 8))) & tile_mask))
         JOYPAD_SET(DOWN);
     */
+
+    for (uint8_t i = 0; i < 16; i++) {
+        if (!*ap_ram.inventory_sword) {
+            break;
+        }
+        if (ap_sprites[i].type == 0 || (ap_sprites[i].state == 0 && ap_sprites[i].subtype == 0)) {
+            continue;
+        }
+        if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY) {
+            if (XYL1BOXDIST(link, ap_sprites[i].tl, ap_sprites[i].br) < 16) {
+                JOYPAD_MASH(B); // Sword
+                break;
+            }
+        }
+    }
 
     ap_target_timeout--;
 
@@ -754,37 +795,36 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             }
         }
     }
-    for (volatile uint8_t i = 0; i < 16; i++) {
-        if (ap_ram.sprite_type[i] == 0) {
+    for (uint8_t i = 0; i < 16; i++) {
+        if (ap_sprites[i].type == 0) {
             continue;
         }
-        struct xy sprite = ap_sprite_xy(i);
-        if (!XYIN(sprite, screen->tl, screen->br)) {
+        if (!XYIN(ap_sprites[i].tl, screen->tl, screen->br)) {
             continue;
         }
-        sprite = XYOP2(XYOP1(sprite, / 8), -, tl_offset);
-        uint16_t sprite_attrs = ap_sprite_attrs[ap_ram.sprite_type[i]];
-        if (sprite_attrs & SPRITE_ATTR_ENMY && 
-            ap_ram.sprite_state[i] != 0x00) { // dead
+        if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY && 
+            ap_sprites[i].state != 0x00) { // dead
+            struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
             for (int dx = -4; dx <= 4; dx++) {
                 for (int dy = -4; dy <= 4; dy++) {
-                    struct xy ds = XYOP2(sprite, +, XY(dx, dy));
+                    struct xy ds = XYOP2(center, +, XY(dx, dy));
                     if (!XYUNDER(ds, grid)) {
                         continue;
                     }
-                    state[ds.y][ds.x].cost += MAX(0, 7 - (ABS(dx) + ABS(dy))) * 50;
+                    state[ds.y][ds.x].cost += MAX(0, 7 - (ABS(dx) + ABS(dy))) * 100;
                 }
             }
         }
-        if ((sprite_attrs & SPRITE_ATTR_BLOK) &&
-            ap_ram.sprite_state[i] != 0x0A && // carried
-            ap_ram.sprite_state[i] != 0x06) { // thrown
-            assert_bp(ap_ram.sprite_state[i] == 0x08 || 
-                      ap_ram.sprite_state[i] == 0x09 || 
-                      ap_ram.sprite_state[i] == 0x00);
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    struct xy ds = XYOP2(sprite, +, XY(dx, dy));
+        if ((ap_sprites[i].attrs & SPRITE_ATTR_BLOK) &&
+            ap_sprites[i].state != 0x0A && // carried
+            ap_sprites[i].state != 0x06) { // thrown
+            assert_bp(ap_sprites[i].state == 0x08 || 
+                      ap_sprites[i].state == 0x09 || 
+                      ap_sprites[i].state == 0x00);
+            struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
+            for (int dx = -1; dx < 3; dx++) {
+                for (int dy = -1; dy < 3; dy++) {
+                    struct xy ds = XYOP2(center, +, XY(dx, dy));
                     if (!XYUNDER(ds, grid)) {
                         continue;
                     }
@@ -1334,6 +1374,82 @@ ap_pathfind_node(struct ap_node * node)
     return ap_pathfind_global(link, node, true);
 }
 
+static void
+ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
+{
+    // Attach to screen
+    new_node->screen = screen;
+    LL_PUSH(screen->node_list, new_node);
+    LOG("attached node %s", new_node->name);
+
+    // XXX This needs to be refactored to pair switches w/ doors
+    // XXX Moved to ap_node_islocked
+    /*
+    if (new_node->type == NODE_SWITCH) {
+        // Assign all doors to this switch
+        for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+            if (node->lock_node == NULL && !XYEQ(node->locked_xy, XY(0, 0))) {
+                LOGB("Assigning switch %s to unlock door %s", new_node->name, node->name);
+                node->lock_node = new_node;
+                break;
+            }
+        }
+    }
+    if (!XYEQ(new_node->locked_xy, XY(0, 0))) {
+        // Assign the first switch we find to this door
+        for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+            if (node->type == NODE_SWITCH) {
+                LOGB("Assigning switch %s to unlock door %s", node->name, new_node->name);
+                new_node->lock_node = node;
+                break;
+            }
+        }
+        LOGB("Unlock door %s = %p", new_node->name, new_node->lock_node);
+    }
+    */
+
+    // Add goals
+    switch (new_node->type) {
+    case NODE_TRANSITION:
+        if ((screen->info != NULL && screen->info->add_explore_goals)) {
+            if (new_node->adjacent_node == NULL && new_node->adjacent_direction != 0)
+                ap_goal_add(GOAL_EXPLORE, new_node);
+        }
+        break;
+    case NODE_ITEM:
+        ap_goal_add(GOAL_PICKUP, new_node);
+        break;
+    case NODE_CHEST:
+        ap_goal_add(GOAL_CHEST, new_node);
+        break;
+    case NODE_SWITCH:
+        //ap_goal_add(GOAL_EXPLORE, new_node);
+        break;
+    case NODE_SPRITE:
+        if (ap_sprite_attrs_for_type(new_node->sprite_type, new_node->sprite_subtype) & SPRITE_ATTR_TALK) {
+            ap_goal_add(GOAL_NPC, new_node);
+        } else if (ap_sprite_attrs_for_type(new_node->sprite_type, new_node->sprite_subtype) & SPRITE_ATTR_ITEM)  {
+            //ap_goal_add(GOAL_EXPLORE, new_node);
+        }
+    case NODE_NONE:
+    default:
+        ;
+    }
+
+    if (strcmp(new_node->name, "0x198A D 4") == 0) {
+        new_node->_debug_blocked = false;
+    } else if (strcmp(new_node->name, "0x1483 L 3") == 0) {
+        new_node->_debug_blocked = true;
+    } else if (strcmp(new_node->name, "0x148A L 4 l") == 0) {
+        new_node->_debug_blocked = true;
+    } else if (new_node->screen->id == 0x0c0a && strncmp(new_node->name, "door", 4) == 0) {
+        new_node->_debug_blocked = true;
+    } else if (new_node->screen->id == 0x0402 && strncmp(new_node->name, "door", 4) == 0) {
+        new_node->_debug_blocked = true;
+    }
+
+}
+
 static struct ap_node *
 ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
 {
@@ -1372,11 +1488,6 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
         return node;
     }
 
-    // Attach to screen
-    new_node->screen = screen;
-    LL_PUSH(screen->node_list, new_node);
-    LOG("attached node %s", new_node->name);
-
     // Merge paired stairs from upper to lower levels
     if (new_node->type == NODE_TRANSITION && (ap_tile_attrs[new_node->tile_attr] & TILE_ATTR_STRS) && new_node->adjacent_node == NULL && XYINDOORS(new_node->tl)) {
         struct xy alt_xy = XYOP2(XYFLIPBG(new_node->tl), + 48 *, dir_dxy[new_node->adjacent_direction]);
@@ -1401,61 +1512,7 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
         }
     }
 
-    // XXX This needs to be refactored to pair switches w/ doors
-    if (new_node->type == NODE_SWITCH) {
-        // Assign all doors to this switch
-        for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
-            if (node->lock_node == NULL && !XYEQ(node->locked_xy, XY(0, 0))) {
-                LOGB("Assigning switch %s to unlock door %s", new_node->name, node->name);
-                node->lock_node = new_node;
-                break;
-            }
-        }
-    }
-    if (!XYEQ(new_node->locked_xy, XY(0, 0))) {
-        // Assign the first switch we find to this door
-        for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
-            if (node->type == NODE_SWITCH) {
-                LOGB("Assigning switch %s to unlock door %s", node->name, new_node->name);
-                new_node->lock_node = node;
-                break;
-            }
-        }
-        LOGB("Unlock door %s = %p", new_node->name, new_node->lock_node);
-    }
-
-    // Add goals
-    switch (new_node->type) {
-    case NODE_TRANSITION:
-        if (new_node->adjacent_node == NULL && new_node->adjacent_direction != 0)
-            ap_goal_add(GOAL_EXPLORE, new_node);
-        break;
-    case NODE_ITEM:
-        ap_goal_add(GOAL_PICKUP, new_node);
-        break;
-    case NODE_CHEST:
-        ap_goal_add(GOAL_CHEST, new_node);
-        break;
-    case NODE_SWITCH:
-        ap_goal_add(GOAL_EXPLORE, new_node);
-        break;
-    case NODE_SPRITE:
-        if (ap_sprite_attrs[new_node->sprite_type] & SPRITE_ATTR_TALK) 
-            ap_goal_add(GOAL_NPC, new_node);
-        else if (ap_sprite_attrs[new_node->sprite_type] & SPRITE_ATTR_ITEM) 
-            ap_goal_add(GOAL_EXPLORE, new_node);
-    case NODE_NONE:
-    default:
-        ;
-    }
-
-    if (strcmp(new_node->name, "0x198A D 4") == 0) {
-        new_node->_debug_blocked = false;
-    } else if (strcmp(new_node->name, "0x1483 L 3") == 0) {
-        new_node->_debug_blocked = true;
-    } else if (strcmp(new_node->name, "0x148A L 4 l") == 0) {
-        new_node->_debug_blocked = true;
-    }
+    ap_screen_add_raw_node(screen, new_node);
 
     *new_node_p = NONNULL(calloc(1, sizeof **new_node_p));
     return new_node;
@@ -1834,12 +1891,19 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 } else {
                     new_node->adjacent_direction = DIR_D;
                 }
-                if (xy.x & 0x200) { // on upper level
-                    new_node->adjacent_direction = dir_opp[new_node->adjacent_direction];
+                // Check for 0x30 family which does a screen transition
+                if ((ap_map_attr(XYOP2(new_node->tl, -, XY(0, 8))) & 0xF0) == 0x30) {
+                    new_node->adjacent_direction = DIR_U;
+                } else if ((ap_map_attr(XYOP2(new_node->tl, +, XY(0, 16))) & 0xF0) == 0x30) {
+                    new_node->adjacent_direction = DIR_D;
+                } else {
+                    if (xy.x & 0x200) { // on upper level
+                        new_node->adjacent_direction = dir_opp[new_node->adjacent_direction];
+                    }
+                    struct xy offset = XYOP1(dir_dxy[new_node->adjacent_direction], * -24);
+                    new_node->tl = XYOP2(new_node->tl, +, offset);
+                    new_node->br = XYOP2(new_node->br, +, offset);
                 }
-                struct xy offset = XYOP1(dir_dxy[new_node->adjacent_direction], * -24);
-                new_node->tl = XYOP2(new_node->tl, +, offset);
-                new_node->br = XYOP2(new_node->br, +, offset);
                 snprintf(new_node->name, sizeof new_node->name, "stairs %c 0x%02x", new_node->adjacent_direction == DIR_U ? 'U' : 'D', attr);
             } else if (ap_tile_attrs[attr] & TILE_ATTR_CHST) {
                 new_node->type = NODE_CHEST;
@@ -1864,20 +1928,24 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
     }
 
     for (size_t i = 0; i < 16; i++) {
-        if (ap_ram.sprite_type[i] == 0)
+        if (ap_sprites[i].type == 0)
             continue;
-        uint8_t sprite_type = ap_ram.sprite_type[i];
-        uint16_t sprite_attrs = ap_sprite_attrs[sprite_type];
-        if (sprite_attrs & SPRITE_ATTR_NODE) {
-            new_node->tl = ap_sprite_xy(i);
+        if (ap_sprites[i].attrs & SPRITE_ATTR_NODE) {
+            new_node->tl = ap_sprites[i].tl;
             if (!XYIN(new_node->tl, screen->tl, screen->br)) {
                 LOG("Sprite %zu out of screen", i);
             } else {
                 new_node->type = NODE_SPRITE;
-                new_node->br = XYOP1(new_node->tl, + 15);
-                new_node->sprite_type = sprite_type;
-                new_node->sprite_subtype = ap_ram.sprite_subtype1[i] | (ap_ram.sprite_subtype2[i] << 8);
-                snprintf(new_node->name, sizeof new_node->name, "sprite %#x.%#x %s", new_node->sprite_type, new_node->sprite_subtype, ap_sprite_attr_name(sprite_type));
+                new_node->br = ap_sprites[i].br;
+                new_node->sprite_type = ap_sprites[i].type;
+                new_node->sprite_subtype = ap_sprites[i].subtype;
+                /*
+                if (ap_sprites[i].attrs & SPRITE_ATTR_TALK) {
+                    new_node->tl = XYOP2(ap_sprites[i].hitbox_tl, +, XY(0, 16));
+                    new_node->br = XYOP2(ap_sprites[i].hitbox_tl, +, XY(15, 31));
+                }
+                */
+                snprintf(new_node->name, sizeof new_node->name, "sprite %#x.%#x %s", new_node->sprite_type, new_node->sprite_subtype, ap_sprite_attr_name(ap_sprites[i].attrs));
                 ap_screen_commit_node(screen, &new_node);
                 new_node_count++;
             }
@@ -1942,7 +2010,29 @@ ap_map_record_transition_from(struct ap_node * src_node)
 
 bool
 ap_node_islocked(struct ap_node * node) {
-    return (node->tile_attr == 0x82 || node->tile_attr == 0x83) && *ap_ram.room_trap_doors && ap_update_map_screen(false) == node->screen;
+    if (node->type != NODE_TRANSITION)
+        return false;
+    if (ap_update_map_screen(false) != node->screen)
+        return false;
+    if (!*ap_ram.room_trap_doors) return false;
+
+    uint8_t tile_attr_tl = ap_map_attr(node->tl);
+    uint8_t tile_attr_br = ap_map_attr(node->br);
+    if ((tile_attr_tl & 0xF0) == 0xF0 || (tile_attr_br & 0xF0) == 0xF0) {
+        // Just-in-time assign switch unlock nodes
+        if (node->lock_node == NULL) {
+            for (struct ap_node * sw_node = node->screen->node_list->next; sw_node != node->screen->node_list; sw_node = sw_node->next) {
+                if (sw_node->type == NODE_SWITCH) {
+                    LOGB("Assigning switch %s to unlock door %s", sw_node->name, node->name);
+                    node->lock_node = sw_node;
+                    break;
+                }
+            }
+        }
+
+        return true;
+    }
+    return false;
 }
 
 void
@@ -1953,13 +2043,13 @@ ap_map_export(const char * filename) {
         struct ap_screen *screen = map_screens[s];
         if (screen == NULL) continue;
         if (XYMAPSCREEN(screen->tl) != s) continue;
-        fprintf(f, ">%#06x %#06x,%#06x %#06x,%#06x # %s\n",
+        fprintf(f, ">0x%04x 0x%04x,0x%04x 0x%04x,0x%04x # %s\n",
                 screen->id, screen->tl.x, screen->tl.y, screen->br.x, screen->br.y, screen->name);
         for (const struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
-            fprintf(f, "@%p %#06x,%#06x %#06x,%#06x",
+            fprintf(f, "@%p 0x%04x,0x%04x 0x%04x,0x%04x",
                     node, node->tl.x, node->tl.y, node->br.x, node->br.y);
-            fprintf(f, " %u %p %d %u %u %s\n",
-                    node->adjacent_direction, node->adjacent_node, node->tile_attr, node->sprite_type, node->sprite_subtype, node->name);
+            fprintf(f, " %u %u %p %d %u %u %s\n",
+                    node->type, node->adjacent_direction, node->adjacent_node, node->tile_attr, node->sprite_type, node->sprite_subtype, node->name);
         }
         for (size_t y = 0; y < 0x80; y++) {
             fprintf(f, "|");
@@ -2027,15 +2117,18 @@ ap_map_import(const char * filename) {
             struct ap_node * node = NONNULL(calloc(1, sizeof *node));
             void * node_ptr = 0;
             void * adj_node_ptr = 0;
-            int rc = sscanf(line, "@%p 0x%hx,0x%hx 0x%hx,0x%hx %hhu %p %hhd %hhu %hu %[^\n]",
+            int node_type = NODE_NONE;
+            int rc = sscanf(line, "@%p 0x%hx,0x%hx 0x%hx,0x%hx %d %hhu %p %hhd %hhu %hu %[^\n]",
                 &node_ptr, &node->tl.x, &node->tl.y, &node->br.x, &node->br.y,
-                &node->adjacent_direction, &adj_node_ptr, &node->tile_attr, &node->sprite_type, &node->sprite_subtype, node->name);
-            assert_bp(rc == 11);
+                &node_type, &node->adjacent_direction, &adj_node_ptr, &node->tile_attr, &node->sprite_type, &node->sprite_subtype, node->name);
+            assert_bp(rc == 12);
+            node->type = node_type;
             assert(pm_set(pm, (uintptr_t) node_ptr, node) == 0);
             if (adj_node_ptr != 0) {
                 assert(pm_get(pm, (uintptr_t) adj_node_ptr, (void **) &node->adjacent_node) == 0);
             }
-            LL_PUSH(screen->node_list, node);
+
+            ap_screen_add_raw_node(screen, node);
         } else if (line[0] == '|') {
             assert(screen != NULL);
             assert(attr_row < 0x80);
