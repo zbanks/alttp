@@ -51,6 +51,7 @@ DIR_LIST
     X(TRANSITION) \
     X(SWITCH) \
     X(SPRITE) \
+    X(SCRIPT) \
 
 struct ap_screen;
 struct ap_node {
@@ -66,6 +67,7 @@ struct ap_node {
     struct ap_node * adjacent_node;
     struct xy locked_xy; // door is locked if this is 0xFx not 0x82
     struct ap_node * lock_node;
+    const struct ap_script * script;
 
     enum ap_node_type {
 #define X(type) CONCAT(NODE_, type),
@@ -101,8 +103,10 @@ struct ap_screen {
 };
 
 struct ap_script {
+    struct xy start_tl;
+    int start_item;
     const char * sequence;
-    struct xy start;
+    char name[32];
 };
 
 struct xy
@@ -110,6 +114,9 @@ ap_link_xy();
 
 struct xy
 ap_sprite_xy(uint8_t i);
+
+uint16_t
+ap_map_attr(struct xy xy);
 
 void
 ap_map_bounds(struct xy * topleft, struct xy * bottomright);
@@ -146,6 +153,9 @@ ap_update_map_screen(bool force);
 
 int
 ap_pathfind_node(struct ap_node * node);
+
+int
+ap_set_script(const struct ap_script * script);
 
 int
 ap_map_record_transition_from(struct ap_node * src_node);

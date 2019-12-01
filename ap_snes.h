@@ -373,6 +373,10 @@ extern struct ap_sprite {
     uint16_t attrs;
 } ap_sprites[16];
 
+extern struct ap_pushblock {
+    struct xy tl;
+} ap_pushblocks[16];
+
 void ap_sprites_update();
 
 extern const char * const ap_sprite_attr_names[];
@@ -702,3 +706,34 @@ static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
 // 0x12 Blue cane
 // 0x13 Magic cape
 // 0x14 Mirror *
+
+#define INVENTORY_LIST \
+    X(0x01, BOW) \
+    X(0x02, BOOMERANG) \
+    X(0x03, HOOKSHOT) \
+    X(0x04, BOMBS) \
+    X(0x05, POWDER) \
+    X(0x06, FIRE_ROD) \
+    X(0x07, ICE_ROD) \
+    X(0x08, BOMBOS) \
+    X(0x09, ETHER) \
+    X(0x0a, QUAKE) \
+    X(0x0b, LAMP) \
+    X(0x0c, HAMMER) \
+    X(0x0d, FLUTE) \
+    X(0x0e, NET) \
+    X(0x0f, BOOK) \
+    X(0x10, BOTTLES) \
+    X(0x11, RED_CANE) \
+    X(0x12, BLUE_CANE) \
+    X(0x13, MAGIC_CAPE) \
+    X(0x14, MIRROR) \
+    X(0x57, FLIPPERS) \
+
+enum {
+#define X(i, n) CONCAT(INVENTORY_, n) = i,
+INVENTORY_LIST
+#undef X
+};
+
+extern const char * const ap_inventory_names[];

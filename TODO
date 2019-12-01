@@ -3,4 +3,5 @@
 * Defeat all the stalfos in that one room in eastern palace
 * Handle/detect big chest
 * Bomb walls
-* Pre-programmed movement for certain tasks
+* DONE: Pre-programmed movement for certain tasks
+* Reset goal attempts count when re-visiting screens

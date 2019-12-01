@@ -12,10 +12,15 @@ static bool map_screen_mask_x[0x100];
 static bool map_screen_mask_y[0x100];
 static size_t last_map_index = -1;
 
-static struct xy ap_targets[2048];
+static struct ap_target {
+    struct xy tl;
+    uint16_t joypad;
+    uint16_t joypad_mask;
+} ap_targets[2048];
 static size_t ap_target_count = 0;
 static int ap_target_timeout = 0;
 static int ap_target_subtimeout = 0;
+static bool ap_target_scripted = false;
 static struct xy ap_target_dst_tl;
 static struct xy ap_target_dst_br;
 static struct ap_screen * ap_target_screen;
@@ -24,6 +29,22 @@ const char * const ap_node_type_names[] = {
 #define X(type) [CONCAT(NODE_, type)] = #type,
 NODE_TYPE_LIST
 #undef X
+};
+
+static const struct ap_script ap_scripts[] = {
+    {
+        .start_tl = XY(0x9af8, 0x21c0),
+        .start_item = -1,
+        .sequence = "^^<^v>>^<^",
+        .name = "Dam Chest Block Puzzle",
+    },
+    {
+        //.start_tl = XY(0xab00, 0x2370),
+        .start_tl = XY(0xaaf0, 0x2340),
+        .start_item = INVENTORY_BOMBS,
+        .sequence = "Yvvv>v<vv^^>>>vv<UA>^^<<<^<<vvv>vv>>>>>",
+        .name = "Blind's House Block Puzzle",
+    },
 };
 
 static const struct ap_screen_info {
@@ -57,6 +78,8 @@ static const struct ap_screen_info {
     { .id = 0x2548, .name = "Smiths' House", },
     { .id = 0x1f68, .name = "Maze Race Entrance", },
     { .id = 0x2388, .name = "Blind's House", .add_explore_goals = true, },
+    { .id = 0x23a8, .name = "Blind's Basement", .add_explore_goals = true, },
+    { .id = 0x22a8, .name = "Blind's Storage", },
     // Hyrule Castle
     { .id = 0x0c48, .name = "HC Entrance", },
     // Eastern Palace
@@ -138,7 +161,7 @@ ap_map_bounds(struct xy * topleft, struct xy * bottomright)
     }
 }
 
-static uint16_t
+uint16_t
 ap_map_attr(struct xy xy)
 {
     struct ap_screen * screen = map_screens[XYMAPSCREEN(xy)];
@@ -399,7 +422,7 @@ ap_print_map_screen(struct ap_screen * screen)
                 }
             }
             for (size_t i = 0; i < ap_target_count; i++) {
-                if (XYIN(xy, ap_targets[i], XYOP1(ap_targets[i], +8))) {
+                if (XYIN(xy, ap_targets[i].tl, XYOP1(ap_targets[i].tl, +8))) {
                     fprintf(mapf, TERM_BLUE(TERM_BOLD("%02x ")), tile_attr);
                     fprintf(mapimg, "%c%c%c", 0, px_shade / 4, 255);
                     goto next_point;
@@ -431,26 +454,29 @@ ap_set_targets(size_t count)
     if (count == 0) 
         return 0;
 
-    ap_targets[count] = ap_link_xy();
+    ap_targets[count] = (struct ap_target) { .tl = ap_link_xy()};
     //fprintf(stderr, "(dest) ");
     for (size_t i = 0; i < count; i++) {
-        if (XYEQ(ap_targets[i], XY(0,0))) {
+        if (XYEQ(ap_targets[i].tl, XY(0,0))) {
             LOG("target 0");
             assert_bp(false);
         }
-        ap_target_timeout += XYL1DIST(ap_targets[i], ap_targets[i+1]) * 2;
+        ap_target_timeout += XYL1DIST(ap_targets[i].tl, ap_targets[i+1].tl) * 2;
+        if (ap_targets[i].joypad != ap_targets[i+1].joypad) {
+            ap_target_timeout += 1;
+        }
         //fprintf(stderr, PRIXYV ", ", PRIXYVF(ap_targets[i]));
     }
     //fprintf(stderr, PRIXYV " (link)\n", PRIXYVF(ap_targets[count]));
 
     for (size_t i = count; i < sizeof(ap_targets) / sizeof(*ap_targets); i++) {
-        ap_targets[count] = XY(0, 0);
+        ap_targets[count] = (struct ap_target) {.tl = XY(0, 0), .joypad = 0, .joypad_mask = 0};
     }
 
     ap_target_subtimeout = 32;
     ap_target_timeout += 64;
     fflush(NULL);
-    LOG("Following targets with timeout: %d", ap_target_timeout);
+    LOG("Following %zu targets with timeout: %d", ap_target_count, ap_target_timeout);
     ap_print_map_screen(NULL);
     return ap_target_timeout;
 }
@@ -471,26 +497,27 @@ ap_follow_targets(uint16_t * joypad)
 
     if (stationary_link_count >= 128) {
         LOGB("Stuck Link Detected! " PRIXY " en route to " PRIXY,
-            PRIXYF(link), PRIXYF(ap_targets[0]));
+            PRIXYF(link), PRIXYF(ap_targets[0].tl));
         ap_target_timeout = 0;
         stationary_link_count = 0;
     }
 
     if (ap_target_timeout <= 0) {
-        //INFO("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0]));
-        LOG("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0]));
+        //INFO("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0].tl));
+        LOG("L:" PRIXY "; " PRIXY " timeout", PRIXYF(link), PRIXYF(ap_targets[0].tl));
         ap_target_count = 0;
         return RC_FAIL;
     }
 
-    if (ap_target_subtimeout-- <= 0) {
+    if (!ap_target_scripted && ap_target_subtimeout-- <= 0) {
         int prev_timeout = ap_target_timeout;
         int rc = ap_pathfind_local(NULL, link, ap_target_dst_tl, ap_target_dst_br, true);
         assert_bp(rc >= 0);
         ap_target_timeout = MIN(prev_timeout, ap_target_timeout);
     }
 
-    struct xy target;
+    struct ap_target target;
+    uint16_t joypad_mask = 0;
     while (true) {
         if (ap_target_count < 1) {
             //INFO("L:" PRIXY "; done", PRIXYF(link));
@@ -499,20 +526,31 @@ ap_follow_targets(uint16_t * joypad)
         }
 
         target = ap_targets[ap_target_count-1];
-        if (XYL1DIST(link, target) <= 1) {
+        if (target.joypad_mask & joypad_mask) {
+            break;
+        }
+
+        *joypad &= (uint16_t) ~target.joypad_mask;
+        *joypad |= target.joypad;
+        joypad_mask |= target.joypad_mask;
+
+        if (XYL1DIST(link, target.tl) <= 1) {
             ap_target_count--;
+            ap_target_subtimeout = 32;
             continue;
         }
-        if (ap_target_count > 1) {
-            struct xy next_target = ap_targets[ap_target_count-2];
-            if (XYIN(link, XYFN2(MIN, target, next_target), XYFN2(MAX, target, next_target))) {
+        if (!ap_target_scripted && ap_target_count > 1) {
+            struct ap_target next_target = ap_targets[ap_target_count-2];
+            if (XYIN(link, XYFN2(MIN, target.tl, next_target.tl), XYFN2(MAX, target.tl, next_target.tl))) {
                 ap_target_count--;
+                ap_target_subtimeout = 32;
                 continue;
             }
         }
 
         break;
     }
+
 
     if (XYLINKIN(link, ap_target_dst_tl, ap_target_dst_br)) {
         ap_target_count = 0;
@@ -528,13 +566,13 @@ ap_follow_targets(uint16_t * joypad)
     //INFO("L:" PRIXY "; %zu:" PRIXY "; %d %#x", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout, *ap_ram.push_dir_bitmask);
     //LOG("L:" PRIXY "; %zu:" PRIXY "; %d", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout);
 
-    if (link.x > target.x)
+    if (link.x > target.tl.x)
         JOYPAD_SET(LEFT);
-    else if (link.x < target.x)
+    else if (link.x < target.tl.x)
         JOYPAD_SET(RIGHT);
-    if (link.y > target.y)
+    if (link.y > target.tl.y)
         JOYPAD_SET(UP);
-    else if (link.y < target.y)
+    else if (link.y < target.tl.y)
         JOYPAD_SET(DOWN);
     /*
     uint8_t dir = 0;
@@ -645,8 +683,10 @@ ap_path_heuristic(struct xy src, struct xy dst_tl, struct xy dst_br)
 static int
 ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy destination_tl, struct xy destination_br, bool commit)
 {
-    if (commit)
+    if (commit) {
         ap_set_targets(0);
+        ap_update_map_screen(true);
+    }
 
     if (screen == NULL) {
         screen = map_screens[XYMAPSCREEN(start_xy)];
@@ -795,11 +835,11 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             }
         }
     }
-    for (uint8_t i = 0; i < 16; i++) {
+    for (volatile uint8_t i = 0; i < 16; i++) {
         if (ap_sprites[i].type == 0) {
             continue;
         }
-        if (!XYIN(ap_sprites[i].tl, screen->tl, screen->br)) {
+        if (!XYIN(ap_sprites[i].hitbox_tl, screen->tl, screen->br)) {
             continue;
         }
         if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY && 
@@ -821,9 +861,15 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             assert_bp(ap_sprites[i].state == 0x08 || 
                       ap_sprites[i].state == 0x09 || 
                       ap_sprites[i].state == 0x00);
-            struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
-            for (int dx = -1; dx < 3; dx++) {
-                for (int dy = -1; dy < 3; dy++) {
+            //volatile struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
+            assert_bp(i != 11);
+            struct xy center = XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl);
+            center = XYOP1(center, / 8);
+            if (i == 11) {
+                LOG(TERM_BOLD("11:") " " PRIXYV, PRIXYVF(center));
+            }
+            for (int dx = -2; dx < 4; dx++) {
+                for (int dy = -2; dy < 4; dy++) {
                     struct xy ds = XYOP2(center, +, XY(dx, dy));
                     if (!XYUNDER(ds, grid)) {
                         continue;
@@ -1001,9 +1047,11 @@ search_done:;
     }
 
     size_t count = 0;
-    ap_targets[count++] = XY(
+    ap_targets[count++] = (struct ap_target) { .tl = XY(
             MIN(next->xy.x, destination_br.x - 15),
-            MIN(next->xy.y, destination_br.y - 15));
+            MIN(next->xy.y, destination_br.y - 15)),
+        .joypad = 0, .joypad_mask = 0,
+    };
 
     struct xy last_dir = XY(1, 2);
     struct xy last_xy = next->xy;
@@ -1017,7 +1065,7 @@ search_done:;
                 //XXX This is normally bad, but for now assume recoil
                 //assert_bp(!((next->xy.x <= screen->tl.x + 15) || (next->xy.y <= screen->tl.y + 15)));
                 //assert_bp(!((next->xy.x >= screen->br.x - 15) || (next->xy.y >= screen->br.y - 15)));
-                ap_targets[count++] = next->xy;
+                ap_targets[count++] = (struct ap_target) { .tl = next->xy };
                 //printf("%zu: "PRIXY "\n", count, PRIXYF(ap_targets[count-1]));
             }
         }
@@ -1030,6 +1078,7 @@ search_done:;
     ap_target_dst_tl = destination_tl;
     ap_target_dst_br = destination_br;
     ap_target_screen = screen;
+    ap_target_scripted = false;
     ap_print_map_screen(screen);
     return final_gscore;
 }
@@ -1274,7 +1323,7 @@ ap_print_map_full()
                 goto next_point;
             }
             for (size_t i = 0; i < ap_target_count; i++) {
-                if (XYIN(xy, ap_targets[i], XYOP1(ap_targets[i], +8))) {
+                if (XYIN(xy, ap_targets[i].tl, XYOP1(ap_targets[i].tl, +8))) {
                     fputc(0, mapf);
                     fputc(255 - tile_attr, mapf);
                     fputc(255, mapf);
@@ -1375,6 +1424,91 @@ ap_pathfind_node(struct ap_node * node)
 }
 
 static void
+array_reverse(void *array_base, size_t item_size, size_t array_len) {
+    uint8_t buf[item_size];
+    uint8_t (*array)[item_size] = array_base;
+    for (size_t i = 0; i < array_len / 2; i++) {
+        size_t j = array_len - 1 - i;
+        assert(j > i);
+        memcpy(buf, array[i], item_size);
+        memcpy(array[i], array[j], item_size);
+        memcpy(array[j], buf, item_size);
+    }
+}
+static void
+array_reverse_test() {
+    char buf[32] = "123 456 789 abc def ";
+    array_reverse(buf, 4, 5);
+    assert_bp(strcmp(buf, "def abc 789 456 123 ") == 0);
+    array_reverse(buf, 4, 4);
+    assert_bp(strcmp(buf, "456 789 abc def 123 ") == 0);
+    array_reverse(buf, 1, 3);
+    assert_bp(strcmp(buf, "654 789 abc def 123 ") == 0);
+}
+
+int
+ap_set_script(const struct ap_script * script) {
+    LOG("Setting script: %s", script->name);
+    struct xy xy = script->start_tl;
+    size_t i = 0;
+    uint16_t dir_mask = SNES_MASK(UP) | SNES_MASK(DOWN) | SNES_MASK(LEFT) | SNES_MASK(RIGHT);
+    ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad = 0, .joypad_mask = 0 };
+    for (const char *s = script->sequence; *s != '\0'; s++) {
+        switch (*s) {
+        case '<':
+            xy.x -= 16;
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad = 0, .joypad_mask = 0 };
+            break;
+        case '>':
+            xy.x += 16;
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad = 0, .joypad_mask = 0 };
+            break;
+        case '^':
+            xy.y -= 16;
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad = 0, .joypad_mask = 0 };
+            break;
+        case 'v':
+            xy.y += 16;
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad = 0, .joypad_mask = 0 };
+            break;
+        case 'A':
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(A), .joypad = 0, };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(A), .joypad = SNES_MASK(A), };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(A), .joypad = 0, };
+            break;
+        case 'Y':
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(Y), .joypad = 0, };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(Y), .joypad = SNES_MASK(Y), };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(Y), .joypad = 0, };
+            break;
+        case 'U':
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = dir_mask, .joypad = 0, };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = dir_mask, .joypad = SNES_MASK(UP), };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = dir_mask, .joypad = 0, };
+            break;
+        default:
+            LOG("Unhandled character in sequence: '%c'", *s);
+            assert_bp(false);
+            break;
+        }
+    }
+    if (ap_targets[i].joypad != 0) {
+        ap_targets[i+1] = ap_targets[i];
+        ap_targets[i+1].joypad = 0;
+        i++;
+    }
+    array_reverse(ap_targets, sizeof(*ap_targets), i);
+    int timeout = ap_set_targets(i);
+    ap_target_dst_tl = xy;
+    ap_target_dst_br = XYOP1(xy, + 15);
+    ap_target_screen = map_screens[XYMAPSCREEN(xy)];
+    ap_target_scripted = true;
+
+    LOG("Script timeout: %d", timeout);
+    return timeout;
+}
+
+static void
 ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
 {
     // Attach to screen
@@ -1431,8 +1565,13 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
         } else if (ap_sprite_attrs_for_type(new_node->sprite_type, new_node->sprite_subtype) & SPRITE_ATTR_ITEM)  {
             //ap_goal_add(GOAL_EXPLORE, new_node);
         }
+        break;
+    case NODE_SCRIPT:
+        ap_goal_add(GOAL_SCRIPT, new_node);
+        break;
     case NODE_NONE:
     default:
+        assert_bp(false);
         ;
     }
 
@@ -1554,6 +1693,7 @@ ap_update_map_screen_nodes()
 }
 
 static void ap_map_add_nodes_to_screen(struct ap_screen * screen);
+static void ap_map_add_scripts_to_screen(struct ap_screen * screen);
 
 struct ap_screen *
 ap_update_map_screen(bool force)
@@ -1625,6 +1765,7 @@ ap_update_map_screen(bool force)
 
             ap_screen_refresh_cache(screen);
             ap_map_add_nodes_to_screen(screen);
+            ap_map_add_scripts_to_screen(screen);
         }
         screen = map_screens[index];
     } else {
@@ -1645,6 +1786,24 @@ ap_update_map_screen(bool force)
     }
 
     return screen;
+}
+
+static void ap_map_add_scripts_to_screen(struct ap_screen * screen) {
+    for (size_t i = 0; i < ARRAYLEN(ap_scripts); i++) {
+        const struct ap_script * script = &ap_scripts[i];
+        if (!XYIN(script->start_tl, screen->tl, screen->br)) {
+            continue;
+        }
+
+        struct ap_node * new_node = NONNULL(calloc(1, sizeof *new_node));
+        new_node->type = NODE_SCRIPT;
+        new_node->tl = script->start_tl;
+        new_node->br = XYOP1(script->start_tl, +15);
+        new_node->script = script;
+        snprintf(new_node->name, sizeof new_node->name, "Script: %s", script->name);
+
+        ap_screen_add_raw_node(screen, new_node);
+    }
 }
 
 static void
@@ -1916,6 +2075,15 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 new_node->adjacent_direction = 0;
                 snprintf(new_node->name, sizeof new_node->name, "switch 0x%02x %s", attr, attr_name);
             } else if (ap_tile_attrs[attr] & TILE_ATTR_LFT0) {
+                size_t i;
+                for (i = 0; i < ARRAYLEN(ap_pushblocks); i++) {
+                    if (XYEQ(ap_pushblocks[i].tl, new_node->tl)) {
+                        break;
+                    }
+                }
+                if (i != ARRAYLEN(ap_pushblocks)) {
+                    continue;
+                }
                 new_node->type = NODE_ITEM;
                 snprintf(new_node->name, sizeof new_node->name, "pot 0x%02x %s", attr, attr_name);
             } else {
@@ -2064,6 +2232,7 @@ ap_map_export(const char * filename) {
 
 void
 ap_map_import(const char * filename) {
+    array_reverse_test();
     FILE * f = fopen(filename, "r");
     if (f == NULL) return;
     struct pm * pm = pm_create();
@@ -2074,7 +2243,9 @@ ap_map_import(const char * filename) {
     size_t line_number = 0;
     while (getline(&line, &line_len, f) != -1) {
         line_number++;
-        if (line[0] == '>') {
+        if (line[0] == '#') {
+            continue;
+        } else if (line[0] == '>') {
             screen = NONNULL(calloc(1, sizeof *screen));
             int rc = sscanf(line, ">0x%hx 0x%hx,0x%hx 0x%hx,0x%hx",
                 &screen->id, &screen->tl.x, &screen->tl.y, &screen->br.x, &screen->br.y);
@@ -2111,6 +2282,8 @@ ap_map_import(const char * filename) {
                 }
             }
 
+            ap_map_add_scripts_to_screen(screen);
+
             attr_row = 0;
         } else if (line[0] == '@') {
             assert(screen != NULL);
@@ -2123,6 +2296,10 @@ ap_map_import(const char * filename) {
                 &node_type, &node->adjacent_direction, &adj_node_ptr, &node->tile_attr, &node->sprite_type, &node->sprite_subtype, node->name);
             assert_bp(rc == 12);
             node->type = node_type;
+            if (node->type == NODE_SCRIPT) {
+                free(node);
+                continue;
+            }
             assert(pm_set(pm, (uintptr_t) node_ptr, node) == 0);
             if (adj_node_ptr != 0) {
                 assert(pm_get(pm, (uintptr_t) adj_node_ptr, (void **) &node->adjacent_node) == 0);

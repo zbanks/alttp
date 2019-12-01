@@ -15,9 +15,11 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
     *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
 
-    if (frame == 0) {
+    static bool has_imported = false;
+    if (!has_imported) {
         LOG("importing");
-        ap_map_import("map_state.4.00131734.txt");
+        ap_map_import("map_state.5.00019532.txt");
+        has_imported = true;
     } else if (frame == 100 && false) {
         ap_map_export("map_state_reflect.txt");
         ap_print_state();
@@ -118,7 +120,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         ap_print_map_full();
         ap_graph_print();
         char filename[128];
-        snprintf(filename, sizeof filename, "map_state.5.%08u.txt", frame);
+        snprintf(filename, sizeof filename, "map_state.6.%08u.txt", frame);
         ap_map_export(filename);
         x = 0;
     }

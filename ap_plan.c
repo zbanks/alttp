@@ -3,6 +3,10 @@
 #include "ap_snes.h"
 #include <limits.h>
 
+#define GOAL_SCORE_UNSATISFIABLE    (INT_MAX)
+#define GOAL_SCORE_COMPLETE         (-2)
+static int ap_goal_score(struct ap_goal * goal);
+
 const char * const ap_goal_type_names[] = {
 #define X(type) [CONCAT(GOAL_, type)] = #type,
 AP_GOAL_TYPE_LIST
@@ -31,19 +35,28 @@ ap_print_goals()
 {
     printf("Goal list: (current index=%#x)\n", XYMAPSCREEN(ap_link_xy()));
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
+        int score = ap_goal_score(goal);
+        char score_str[16];
+        if (score == GOAL_SCORE_COMPLETE) {
+            snprintf(score_str, sizeof(score_str), "compl");
+        } else if (score == GOAL_SCORE_UNSATISFIABLE) {
+            snprintf(score_str, sizeof(score_str), "unsat");
+        } else {
+            snprintf(score_str, sizeof(score_str), "%5d", score);
+        }
+        printf("    * %s " PRIGOAL, score_str, PRIGOALF(goal));
         if (goal->type == GOAL_EXPLORE) {
             if (goal->node != NULL && goal->node->adjacent_node != NULL) {
-                printf("    * " PRIGOAL " to %s\n", PRIGOALF(goal), goal->node->adjacent_node->name);
+                printf(" to %s", goal->node->adjacent_node->name);
             } else {
-                printf("    * " PRIGOAL " to umapped\n", PRIGOALF(goal));
+                printf(" to umapped");
             }
         } else {
             if (goal->node != NULL && goal->node->screen != NULL) {
-                printf("    * " PRIGOAL " on %s\n", PRIGOALF(goal), goal->node->screen->name);
-            } else {
-                printf("    * " PRIGOAL "\n", PRIGOALF(goal));
+                printf(" on %s", goal->node->screen->name);
             }
         }
+        printf("\n");
         
     }
     printf("\n");
@@ -111,6 +124,9 @@ ap_print_task(const struct ap_task * task)
     case TASK_STEP_OFF_SWITCH:
     case TASK_TALK_NPC:
         buf += sprintf(buf, " [node=" PRINODE "]", PRINODEF(task->node));
+        break;
+    case TASK_SCRIPT:
+        buf += sprintf(buf, " [script=%s start_tl=" PRIXYV "]", task->node->script->name, PRIXYVF(task->node->script->start_tl));
         break;
     case TASK_SET_INVENTORY:
         buf += sprintf(buf, " [item=%#x]", task->item);
@@ -340,9 +356,21 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             }
         }
         break;
+    case TASK_SCRIPT:
+        switch (task->state) {
+        case 0:
+            rc = ap_set_script(task->node->script);
+            if (rc < 0) return RC_FAIL;
+            task->timeout = rc + 32;
+            task->state++;
+        case 1:
+            return ap_follow_targets(joypad);
+        }
+        break;
     case TASK_NONE:
     default:
         LOG("unknown task type %d", task->type);
+        assert_bp(false);
         return RC_FAIL;
     }
     if (task->timeout-- <= 0) {
@@ -352,8 +380,6 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     return RC_INPR;
 }
 
-#define GOAL_SCORE_UNSATISFIABLE    (INT_MAX)
-#define GOAL_SCORE_COMPLETE         (-2)
 static int
 ap_goal_score(struct ap_goal * goal)
 {
@@ -382,34 +408,50 @@ ap_goal_score(struct ap_goal * goal)
         struct xy link = ap_link_xy();
         score += ap_path_heuristic(link, goal->node->tl, goal->node->br);
     }
+    //if (goal->type != GOAL_SCRIPT && goal->type != GOAL_NPC) {
+    //    score += 1000000;
+    //}
     score += goal->attempts * 100; //1000000;
     switch (goal->type) {
     case GOAL_PICKUP:
         score += 0;
-        if (goal->node->screen != screen)
+        if (goal->node->screen != screen) {
             score = GOAL_SCORE_UNSATISFIABLE;
+        }
+        if (ap_map_attr(goal->node->tl) == 0x27) {
+            return GOAL_SCORE_COMPLETE;
+        }
         break;
     case GOAL_CHEST:
+        if (ap_map_attr(XYOP2(goal->node->tl, -, XY(0, 16))) == 0x27) {
+            return GOAL_SCORE_COMPLETE;
+        }
+        break;
     case GOAL_NPC:
-        //score += 1000000;
+        //score += 1000;
+        break;
+    case GOAL_SCRIPT:
         break;
     case GOAL_EXPLORE:
+        score += 100000;
         //if (goal->node->type != NODE_SWITCH)
             //score += 1000;
-        if (goal->node->adjacent_node != NULL)
-            score = GOAL_SCORE_COMPLETE;
+        if (goal->node->adjacent_node != NULL) {
+            return GOAL_SCORE_COMPLETE;
+        }
         break;
     case GOAL_ITEM:
         if (ap_ram.inventory_base[goal->item]) {
-            score = GOAL_SCORE_COMPLETE;
+            return GOAL_SCORE_COMPLETE;
         } else {
-            score = GOAL_SCORE_UNSATISFIABLE;
+            return GOAL_SCORE_UNSATISFIABLE;
         }
         break;
     default:
-        score = GOAL_SCORE_UNSATISFIABLE;
+        return GOAL_SCORE_UNSATISFIABLE;
         break;
     }
+    if (score == 100147) { score *= 10; }
 
     return score;
 }
@@ -424,6 +466,7 @@ ap_goal_complete(struct ap_goal * goal)
     case GOAL_PICKUP:
     case GOAL_CHEST:
     case GOAL_NPC:
+    case GOAL_SCRIPT:
         //LL_EXTRACT(goal->node->node_parent, goal->node);
         //free(goal->node);
         break;
@@ -504,6 +547,7 @@ retry_new_goal:;
     case GOAL_CHEST:
     case GOAL_PICKUP:
     case GOAL_NPC:
+    case GOAL_SCRIPT:
     case GOAL_EXPLORE:;
         // For debugging: set inventory
         //task = ap_task_prepend(); 
@@ -565,8 +609,25 @@ retry_new_goal:;
         task->type = TASK_TALK_NPC;
         task->node = min_goal->node;
         snprintf(task->name, sizeof task->name, "npc");
+        break;
+    case GOAL_SCRIPT:;
+        int item = min_goal->node->script->start_item;
+        if (item > 0) {
+            assert(item <= 0xff && ap_inventory_names[item] != NULL);
+            task = ap_task_append();
+            task->type = TASK_SET_INVENTORY;
+            task->item = item;
+            snprintf(task->name, sizeof task->name, "start item: %s", ap_inventory_names[item]);
+        }
+        task = ap_task_append();
+        task->type = TASK_SCRIPT;
+        task->node = min_goal->node;
+        snprintf(task->name, sizeof task->name, "script");
+        break;
     default:
         LOG("Invalid goal type: %d", min_goal->type);
+        assert_bp(false);
+        break;
     }
 }
 
@@ -613,11 +674,11 @@ ap_plan_init()
 
     item_goal_bombs = goal = ap_goal_append();
     goal->type = GOAL_ITEM;
-    goal->item = 0x04;
-    snprintf(goal->name, sizeof goal->name, "get: bombs");
+    goal->item = INVENTORY_BOMBS;
+    snprintf(goal->name, sizeof goal->name, "get: %s", ap_inventory_names[goal->item]);
 
     item_goal_flippers = goal = ap_goal_append();
     goal->type = GOAL_ITEM;
-    goal->item = 0x57;
-    snprintf(goal->name, sizeof goal->name, "get: flippers");
+    goal->item = INVENTORY_FLIPPERS;
+    snprintf(goal->name, sizeof goal->name, "get: %s", ap_inventory_names[goal->item]);
 }

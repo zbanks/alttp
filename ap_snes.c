@@ -10,6 +10,7 @@ struct ap_snes9x * ap_emu = NULL;
 char ap_info_string[INFO_STRING_SIZE];
 bool ap_debug;
 struct ap_sprite ap_sprites[16];
+struct ap_pushblock ap_pushblocks[16];
 
 const char * const ap_tile_attr_names[] = {
 #define X(d) [CONCAT(TILE_ATTR_, d)] = STRINGIFY(d),
@@ -63,7 +64,8 @@ AP_RAM_LIST
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
     ap_emu->load("home");
-    //ap_emu->load("blinds_house");
+    //ap_emu->load("dam_puzzle");
+    ap_emu->load("blinds_house");
 
     ap_plan_init();
 }
@@ -136,6 +138,32 @@ ap_sprites_update() {
             sprite->hitbox_tl = XY(0, 0);
         }
     }
+
+    // The blocks don't seem to update in real-time so not sure if this
+    // memory region is actually useful
+    memset(ap_pushblocks, 0, sizeof(ap_pushblocks));
+    size_t n_blocks = 0;
+    if (*ap_ram.in_building) {
+        struct xy raw_room_tl;
+        raw_room_tl = XYOP1(ap_link_xy(), & (uint16_t) ~0x1FF);
+        for (size_t i = 0; i < (0x18C / 4); i++) {
+            uint16_t room_id = ap_ram.block_data[i] & 0xFFFF;
+            if (room_id != *ap_ram.dungeon_room) {
+                continue;
+            }
+            uint16_t tile_addr = ap_ram.block_data[i] >> 16;
+            struct xy xy = XY((tile_addr & 0x7E) << 2, (tile_addr & 0x1F80) >> 4);
+            //LOG("Raw block %#x: %#x %#x", tile_addr, xy.x, xy.y);
+            xy = XYOP2(raw_room_tl, +, xy);
+            //struct xy xy = ap_map16_to_xy(raw_room_tl, tile_addr & 0x1FFF);
+            if (tile_addr & 0x2000) {
+                xy = XYFLIPBG(xy); // XXX test this
+            }
+            ap_pushblocks[n_blocks++].tl = xy;
+            assert(n_blocks < ARRAYLEN(ap_pushblocks));
+            //LOGB("> Block at %#x " PRIXYV, tile_addr, PRIXYVF(xy));
+        }
+    }
 }
 
 void
@@ -152,23 +180,19 @@ ap_sprites_print()
             PRIBBVF(ap_sprites[i]), XYL1BOXDIST(link, ap_sprites[i].tl, ap_sprites[i].br));
     }
 
-    // This code sort of works, but the Y coordinate is off by +0x200?
+    // This only works inside
     // The blocks don't seem to update in real-time so not sure if this
     // memory region is actually useful
-    /*
-    struct xy tl, br;
-    ap_map_bounds(&tl, &br);
-    for (size_t i = 0; i < (0x18C / 4); i++) {
-        uint16_t room_id = ap_ram.block_data[i] & 0xFFFF;
-        if (room_id != *ap_ram.dungeon_room) {
+    for (size_t i = 0; i < ARRAYLEN(ap_pushblocks); i++) {
+        if (XYEQ(ap_pushblocks[i].tl, XY(0, 0))) {
             continue;
         }
-        uint16_t tile_addr = ap_ram.block_data[i] >> 16;
-        struct xy xy = ap_map16_to_xy(tl, tile_addr & 0x1FFF);
-        if (tile_addr & 0x2000) {
-            xy = XYFLIPBG(xy);
-        }
-        LOGB("> Block at %#x " PRIXYV, tile_addr, PRIXYVF(xy));
+        LOG("Pushblock: " PRIXYV, PRIXYVF(ap_pushblocks[i].tl));
     }
-    */
 }
+
+const char * const ap_inventory_names[] = {
+#define X(i, n) [i] = STRINGIFY(n),
+INVENTORY_LIST
+#undef X
+};
