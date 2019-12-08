@@ -2,6 +2,7 @@
 #include "ap_macro.h"
 #include "ap_math.h"
 #include "ap_snes.h"
+#include "ap_graph.h"
 
 //                                   Matches ledge direction
 //                                   0   U   D   L   R  LU  LD  RU  RD  0
@@ -68,6 +69,7 @@ struct ap_node {
     struct xy locked_xy; // door is locked if this is 0xFx not 0x82
     struct ap_node * lock_node;
     const struct ap_script * script;
+    struct ap_goal * goal;
 
     enum ap_node_type {
 #define X(type) CONCAT(NODE_, type),
@@ -100,6 +102,7 @@ struct ap_screen {
     const struct ap_screen_info * info;
     char name[64];
     uint8_t attr_cache[0x80][0x80];
+    struct ap_graph graph;
 };
 
 struct ap_script {

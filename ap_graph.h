@@ -17,7 +17,8 @@ struct ap_graph {
     struct ap_graph * next;
     struct ap_graph * prev;
 
-    bool visited;
+    //bool visited;
+    const char * name;
     bool done;
     // int min_cost; TODO
 
@@ -29,7 +30,7 @@ struct ap_graph {
 };
 
 void
-ap_graph_init(struct ap_graph * graph);
+ap_graph_init(struct ap_graph * graph, const char * name);
 
 void
 ap_graph_extract(struct ap_graph * graph);

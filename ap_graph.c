@@ -10,10 +10,11 @@ static struct ap_graph _ap_graph_list = {.next = &_ap_graph_list, .prev = &_ap_g
 static struct ap_graph * ap_graph_list = &_ap_graph_list;
 
 void
-ap_graph_init(struct ap_graph * graph)
+ap_graph_init(struct ap_graph * graph, const char * name)
 {
     NONNULL(graph);
     memset(graph, 0, sizeof *graph);
+    graph->name = name;
     LL_INIT(&graph->equivs);
     LL_INIT(graph);
     LL_PUSH(ap_graph_list, graph);
@@ -67,7 +68,10 @@ ap_graph_add_prereq(struct ap_graph * graph, struct ap_graph * prereq)
     assert(graph->prereqs_count < AP_GRAPH_MAX_EDGES);
     assert(prereq->enables_count< AP_GRAPH_MAX_EDGES);
     for (size_t i = 0; i < prereq->enables_count; i++) {
-        assert(prereq->enables[i] != graph);
+        if (prereq->enables[i] == graph) {
+            assert_bp(false);
+            return; // Already a prereq
+        }
     }
 
     graph->prereqs[graph->prereqs_count++] = prereq;
@@ -80,6 +84,10 @@ ap_graph_add_equiv(struct ap_graph * graph, struct ap_graph * _equiv)
     NONNULL(graph);
     assert(graph != _equiv);
     struct ap_graph_equivs * equiv = (void *) _equiv;
+    if (LL_PEEK(equiv) != NULL) {
+        //assert_bp(false);
+        return; // Already an equiv
+    }
     LL_PUSH(&graph->equivs, equiv);
 }
 
@@ -116,20 +124,35 @@ void
 ap_graph_print()
 {
     FILE * gf = NONNULL(fopen("graph.dot", "w"));
-    fprintf(gf, "\ndigraph g {\n");
+    fprintf(gf, "\ndigraph g {\n    rankdir = LR\n");
     for (struct ap_graph * graph = ap_graph_list->next; graph != ap_graph_list; graph = graph->next) {
         assert_bp(graph->next->prev == graph && graph->prev->next == graph);
         //if (graph->equivs.next == &graph->equivs && graph->prereqs_count == 0 && graph->enables_count == 0) continue;
-        fprintf(gf, "   g%p [label=\"" PRIGOAL "\"]\n", graph, PRIGOALF(ap_goal_from_graph(graph)));
+        fprintf(gf, "   g%p [label=\"%s\" shape=box]\n", graph, graph->name);
         if (graph->done) {
+            // * Blue nodes are done
             fprintf(gf, "    g%p [color=blue]\n", graph);
         }
+        struct ap_graph_equivs * min_es = &graph->equivs;
         for (struct ap_graph_equivs * es = graph->equivs.next; es != &graph->equivs; es = es->next) {
-            if (es < &graph->equivs)
-                continue;
-            fprintf(gf, "    g%p -> g%p [dir=both color=green]\n", es, graph);
+            if (es < min_es) {
+                min_es = es;
+                break;
+                //continue;
+            }
+            //fprintf(gf, "    g%p -> g%p [dir=both color=green]\n", es, graph);
+        }
+        // * Green clusters are equivalents
+        if (min_es == &graph->equivs && LL_PEEK(min_es) != NULL) {
+            fprintf(gf, "    subgraph cluster_e%p { color=green; \n", min_es);
+            fprintf(gf, "          g%p\n", min_es);
+            for (struct ap_graph_equivs * es = min_es->next; es != min_es; es = es->next) {
+                fprintf(gf, "          g%p\n", es);
+            }
+            fprintf(gf, "   }\n");
         }
         for (size_t i = 0; i < graph->prereqs_count; i++) {
+            // * Black lines are prereqs
             fprintf(gf, "    g%p -> g%p\n", graph->prereqs[i], graph);
         }
     }

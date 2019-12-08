@@ -79,7 +79,7 @@ static const struct ap_screen_info {
     { .id = 0x1f68, .name = "Maze Race Entrance", },
     { .id = 0x2388, .name = "Blind's House", .add_explore_goals = true, },
     { .id = 0x23a8, .name = "Blind's Basement", .add_explore_goals = true, },
-    { .id = 0x22a8, .name = "Blind's Storage", },
+    { .id = 0x22a8, .name = "Blind's Storage",},
     // Hyrule Castle
     { .id = 0x0c48, .name = "HC Entrance", },
     // Eastern Palace
@@ -862,7 +862,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                       ap_sprites[i].state == 0x09 || 
                       ap_sprites[i].state == 0x00);
             //volatile struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
-            assert_bp(i != 11);
+            //assert_bp(i != 11);
             struct xy center = XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl);
             center = XYOP1(center, / 8);
             if (i == 11) {
@@ -1513,6 +1513,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
 {
     // Attach to screen
     new_node->screen = screen;
+    LL_INIT(new_node);
     LL_PUSH(screen->node_list, new_node);
     LOG("attached node %s", new_node->name);
 
@@ -1547,32 +1548,55 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
     case NODE_TRANSITION:
         if ((screen->info != NULL && screen->info->add_explore_goals)) {
             if (new_node->adjacent_node == NULL && new_node->adjacent_direction != 0)
-                ap_goal_add(GOAL_EXPLORE, new_node);
+                new_node->goal = ap_goal_add(GOAL_EXPLORE, new_node);
         }
         break;
     case NODE_ITEM:
-        ap_goal_add(GOAL_PICKUP, new_node);
+        new_node->goal = ap_goal_add(GOAL_PICKUP, new_node);
         break;
     case NODE_CHEST:
-        ap_goal_add(GOAL_CHEST, new_node);
+        new_node->goal = ap_goal_add(GOAL_CHEST, new_node);
         break;
     case NODE_SWITCH:
         //ap_goal_add(GOAL_EXPLORE, new_node);
         break;
     case NODE_SPRITE:
         if (ap_sprite_attrs_for_type(new_node->sprite_type, new_node->sprite_subtype) & SPRITE_ATTR_TALK) {
-            ap_goal_add(GOAL_NPC, new_node);
+            new_node->goal = ap_goal_add(GOAL_NPC, new_node);
         } else if (ap_sprite_attrs_for_type(new_node->sprite_type, new_node->sprite_subtype) & SPRITE_ATTR_ITEM)  {
             //ap_goal_add(GOAL_EXPLORE, new_node);
         }
         break;
     case NODE_SCRIPT:
-        ap_goal_add(GOAL_SCRIPT, new_node);
+        new_node->goal = ap_goal_add(GOAL_SCRIPT, new_node);
         break;
     case NODE_NONE:
     default:
         assert_bp(false);
         ;
+    }
+
+    // Update Graph
+    if (new_node->goal != NULL) {
+        ap_graph_add_prereq(&new_node->goal->graph, &screen->graph);
+
+        for (struct ap_node * node2 = screen->node_list->next; node2 != screen->node_list; node2 = node2->next) {
+            if (node2 == new_node) continue;
+            if (new_node->goal == NULL || node2->goal == NULL) continue;
+            if (new_node->type != NODE_TRANSITION && node2->type != NODE_TRANSITION) continue;
+            int dist1 = ap_pathfind_local(screen, XYMID(new_node->tl, new_node->br), node2->tl, node2->br, false);
+            int dist2 = ap_pathfind_local(screen, XYMID(node2->tl, node2->br), new_node->tl, new_node->br, false);
+            if (dist1 >= 0 && dist2 >= 0) {
+                if (new_node->type == NODE_TRANSITION && node2->type == NODE_TRANSITION) {
+                    // XXX only the first new equiv is actually added; transitivity is assumed
+                    ap_graph_add_equiv(&node2->goal->graph, &new_node->goal->graph);
+                } else if (new_node->type == NODE_TRANSITION) {
+                    ap_graph_add_prereq(&node2->goal->graph, &new_node->goal->graph);
+                } else {
+                    ap_graph_add_prereq(&new_node->goal->graph, &node2->goal->graph);
+                }
+            }
+        }
     }
 
     if (strcmp(new_node->name, "0x198A D 4") == 0) {
@@ -1746,6 +1770,7 @@ ap_update_map_screen(bool force)
                     break;
                 }
             }
+            ap_graph_init(&screen->graph, screen->name);
             LL_INIT(screen->node_list);
             if (screen->info) {
                 snprintf(screen->name, sizeof screen->name, "%s%s " PRIXY " x " PRIXY, screen->info->name, suffix, PRIXYF(cell_tl), PRIXYF(cell_br));
@@ -1773,6 +1798,7 @@ ap_update_map_screen(bool force)
         ap_map_add_nodes_to_screen(screen);
     }
 
+    ap_graph_mark_done(&screen->graph);
     ap_sprites_print();
     ap_print_map_screen(screen);
     printf("Nodes: [(un)Reachable? (un)Adjacent?] (tl x br) type \"name\"\n");
@@ -1783,6 +1809,7 @@ ap_update_map_screen(bool force)
         node->_reachable = reachable;
         printf("   %d. [%c%c] (" PRIXY " x " PRIXY ") %s \"%s\"\n",
                 i++, "uR"[reachable], "uA"[node->adjacent_node != NULL], PRIXYF(node->tl), PRIXYF(node->br), ap_node_type_names[node->type], node->name);
+
     }
 
     return screen;
@@ -2256,6 +2283,7 @@ ap_map_import(const char * filename) {
                     break;
                 }
             }
+            ap_graph_init(&screen->graph, screen->name);
             LL_INIT(screen->node_list);
             const char * suffix = "";
             if (XYINDOORS(screen->tl)) {

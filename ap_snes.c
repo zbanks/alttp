@@ -65,7 +65,7 @@ AP_RAM_LIST
     //ap_emu->load("estpal");
     ap_emu->load("home");
     //ap_emu->load("dam_puzzle");
-    ap_emu->load("blinds_house");
+    //ap_emu->load("blinds_house");
 
     ap_plan_init();
 }

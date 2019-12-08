@@ -36,15 +36,18 @@ extern bool ap_debug;
 
 #define LL_INIT(list) ({ \
     (list)->prev = (list); \
-    (list)->next = (list); })
+    (list)->next = (list); \
+    (list); })
 
 #define LL_PUSH(list, node) ({ \
+    assert((node)->next == (node) && (node)->prev == (node)); \
     (node)->prev = (list)->prev; \
     (node)->prev->next = (node); \
     (node)->next = (list); \
     (node)->next->prev = (node); })
 
 #define LL_PREPEND(list, node) ({ \
+    assert((node)->next == (node) && (node)->prev == (node)); \
     (node)->next = (list)->next; \
     (node)->next->prev = (node); \
     (node)->prev = (list); \
@@ -54,11 +57,12 @@ extern bool ap_debug;
     __auto_type n = (list)->next; \
     (list)->next = (list)->next->next; \
     (list)->next->prev = (list); \
-    (n == (list)) ? NULL : n; })
+    (n == (list)) ? NULL : LL_INIT(n); })
 
 #define LL_EXTRACT(node) ({ \
     (node)->prev->next = (node)->next; \
     (node)->next->prev = (node)->prev; \
+    LL_INIT(node); \
     })
 
 #define LL_PEEK(list) ({ \

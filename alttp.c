@@ -116,7 +116,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     //INFO("%u L:" PRIXY " M: " PRIXY "," PRIXY " m %u", *ap_ram.dungeon_room, PRIXYF(ap_link_xy()), PRIXYF(topleft), PRIXYF(bottomright), XYMAPSCREEN(topleft));
 
     static uint16_t x = 0;
-    if (x++ == 4000) {
+    if (x++ == 400) {
         ap_print_map_full();
         ap_graph_print();
         char filename[128];

@@ -35,15 +35,17 @@ struct ap_goal {
 };
 extern struct ap_goal * ap_goal_list;
 
+/*
 static struct ap_goal *
 ap_goal_from_graph(struct ap_graph * graph) {
     uintptr_t p = (uintptr_t) graph;
     p -= (uintptr_t) &((struct ap_goal *) 0)->graph;
     return (struct ap_goal *) p;
 }
+*/
 
-#define PRIGOAL "%s %s [node=" PRINODE "]"
-#define PRIGOALF(g) ap_goal_type_names[(g)->type], (g)->name, PRINODEF((g)->node)
+#define PRIGOAL "%s [node=" PRINODE "]"
+#define PRIGOALF(g) ap_goal_type_names[(g)->type], PRINODEF((g)->node)
 
 void
 ap_print_goals();

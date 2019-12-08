@@ -38,13 +38,13 @@ ap_print_goals()
         int score = ap_goal_score(goal);
         char score_str[16];
         if (score == GOAL_SCORE_COMPLETE) {
-            snprintf(score_str, sizeof(score_str), "compl");
+            snprintf(score_str, sizeof(score_str), TERM_GREEN("compl"));
         } else if (score == GOAL_SCORE_UNSATISFIABLE) {
-            snprintf(score_str, sizeof(score_str), "unsat");
+            snprintf(score_str, sizeof(score_str), TERM_RED("unsat"));
         } else {
-            snprintf(score_str, sizeof(score_str), "%5d", score);
+            snprintf(score_str, sizeof(score_str), TERM_BLUE("%5d"), score);
         }
-        printf("    * %s " PRIGOAL, score_str, PRIGOALF(goal));
+        printf("    " TERM_BOLD("*") " %s " PRIGOAL, score_str, PRIGOALF(goal));
         if (goal->type == GOAL_EXPLORE) {
             if (goal->node != NULL && goal->node->adjacent_node != NULL) {
                 printf(" to %s", goal->node->adjacent_node->name);
@@ -68,8 +68,9 @@ ap_goal_append()
     struct ap_goal * goal = calloc(1, sizeof *goal);
     assert(goal != NULL);
 
+    LL_INIT(goal);
     LL_PUSH(ap_goal_list, goal);
-    ap_graph_init(&goal->graph);
+    ap_graph_init(&goal->graph, goal->name);
     ap_new_goals = true;
     return goal;
 }
@@ -84,7 +85,7 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
     struct ap_goal * goal = ap_goal_append();
     goal->type = type;
     goal->node = node;
-    snprintf(goal->name, sizeof goal->name, "-");
+    snprintf(goal->name, sizeof goal->name, PRIGOAL, PRIGOALF(goal));
     if (type == GOAL_EXPLORE) {
         LOG("New explore, attr: %#x", node->tile_attr);
     }
@@ -98,6 +99,7 @@ static struct ap_task *
 ap_task_append()
 {
     struct ap_task * task = NONNULL(calloc(1, sizeof *task));
+    LL_INIT(task);
     LL_PUSH(ap_task_list, task);
     return task;
 }
@@ -106,6 +108,7 @@ static struct ap_task *
 ap_task_prepend()
 {
     struct ap_task * task = NONNULL(calloc(1, sizeof *task));
+    LL_INIT(task);
     LL_PREPEND(ap_task_list, task);
     return task;
 }
@@ -384,9 +387,6 @@ static int
 ap_goal_score(struct ap_goal * goal)
 {
     assert(goal != NULL);
-    if (ap_graph_is_blocked(&goal->graph)) {
-        return GOAL_SCORE_UNSATISFIABLE;
-    }
 
     struct ap_screen * screen = ap_update_map_screen(false);
 
@@ -404,10 +404,6 @@ ap_goal_score(struct ap_goal * goal)
     */
 
     int score = 0;
-    if (goal->node != NULL) {
-        struct xy link = ap_link_xy();
-        score += ap_path_heuristic(link, goal->node->tl, goal->node->br);
-    }
     //if (goal->type != GOAL_SCRIPT && goal->type != GOAL_NPC) {
     //    score += 1000000;
     //}
@@ -416,7 +412,7 @@ ap_goal_score(struct ap_goal * goal)
     case GOAL_PICKUP:
         score += 0;
         if (goal->node->screen != screen) {
-            score = GOAL_SCORE_UNSATISFIABLE;
+            return GOAL_SCORE_UNSATISFIABLE;
         }
         if (ap_map_attr(goal->node->tl) == 0x27) {
             return GOAL_SCORE_COMPLETE;
@@ -451,6 +447,20 @@ ap_goal_score(struct ap_goal * goal)
         return GOAL_SCORE_UNSATISFIABLE;
         break;
     }
+
+    if (ap_graph_is_blocked(&goal->graph)) {
+        return GOAL_SCORE_UNSATISFIABLE;
+    }
+
+    if (goal->node != NULL) {
+        struct xy link = ap_link_xy();
+        int heuristic = ap_path_heuristic(link, goal->node->tl, goal->node->br);
+        if (heuristic < 0) {
+            return GOAL_SCORE_UNSATISFIABLE;
+        }
+        score += heuristic;
+    }
+
     if (score == 100147) { score *= 10; }
 
     return score;
