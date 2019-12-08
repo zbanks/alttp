@@ -1,6 +1,6 @@
 #pragma once
 #include "ap_macro.h"
-#include "ap_graph.h"
+#include "ap_req.h"
 
 #define AP_GOAL_TYPE_LIST \
     X(NONE) \
@@ -31,7 +31,8 @@ struct ap_goal {
     int attempts;
     int last_score;
 
-    struct ap_graph graph;
+    //struct ap_graph graph;
+    struct ap_req req;
 };
 extern struct ap_goal * ap_goal_list;
 

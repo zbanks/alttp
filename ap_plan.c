@@ -3,9 +3,10 @@
 #include "ap_snes.h"
 #include <limits.h>
 
-#define GOAL_SCORE_UNSATISFIABLE    (INT_MAX)
+#define GOAL_SCORE_UNSATISFIABLE    (INT_MAX-1)
+#define GOAL_SCORE_GT_LIMIT         (INT_MAX)
 #define GOAL_SCORE_COMPLETE         (-2)
-static int ap_goal_score(struct ap_goal * goal);
+static int ap_goal_score(struct ap_goal * goal, int max_cost);
 
 const char * const ap_goal_type_names[] = {
 #define X(type) [CONCAT(GOAL_, type)] = #type,
@@ -26,22 +27,23 @@ static struct ap_task _ap_task_list = {.next = &_ap_task_list, .prev = &_ap_task
 struct ap_task * ap_task_list = &_ap_task_list;
 static bool ap_new_goals = true;
 
-static struct ap_goal * item_goal_flippers = NULL;
-static struct ap_goal * item_goal_bombs = NULL;
-static struct ap_goal * item_goal_uncle = NULL;
-
 void
 ap_print_goals()
 {
     printf("Goal list: (current index=%#x)\n", XYMAPSCREEN(ap_link_xy()));
+    int max_score = GOAL_SCORE_GT_LIMIT;
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
-        int score = ap_goal_score(goal);
+        int score = ap_goal_score(goal, max_score);
+        goal->last_score = score;
         char score_str[16];
         if (score == GOAL_SCORE_COMPLETE) {
             snprintf(score_str, sizeof(score_str), TERM_GREEN("compl"));
         } else if (score == GOAL_SCORE_UNSATISFIABLE) {
             snprintf(score_str, sizeof(score_str), TERM_RED("unsat"));
+        } else if (score == GOAL_SCORE_GT_LIMIT) {
+            snprintf(score_str, sizeof(score_str), TERM_BLUE("limit"));
         } else {
+            max_score = MIN(score, max_score);
             snprintf(score_str, sizeof(score_str), TERM_BLUE("%5d"), score);
         }
         printf("    " TERM_BOLD("*") " %s " PRIGOAL, score_str, PRIGOALF(goal));
@@ -56,6 +58,9 @@ ap_print_goals()
                 printf(" on %s", goal->node->screen->name);
             }
         }
+        char reqbuf[4096];
+        ap_req_print(&goal->req, reqbuf);
+        printf(" Needs: %s", reqbuf);
         printf("\n");
         
     }
@@ -70,7 +75,8 @@ ap_goal_append()
 
     LL_INIT(goal);
     LL_PUSH(ap_goal_list, goal);
-    ap_graph_init(&goal->graph, goal->name);
+    //ap_graph_init(&goal->graph, goal->name);
+    ap_req_init(&goal->req);
     ap_new_goals = true;
     return goal;
 }
@@ -89,8 +95,13 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
     if (type == GOAL_EXPLORE) {
         LOG("New explore, attr: %#x", node->tile_attr);
     }
+    if (type != GOAL_EXPLORE && !(type == GOAL_NPC && node->sprite_type == 0x73 && node->sprite_subtype == 0x100)) {
+        // Don't do anything but explore until we get sword from uncle
+        ap_req_require(&goal->req, 0, REQUIREMENT_SWORD);
+    }
     if (type == GOAL_EXPLORE && (ap_tile_attrs[node->tile_attr] & TILE_ATTR_SWIM)) {
-        ap_graph_add_prereq(&goal->graph, &item_goal_flippers->graph);
+        //ap_graph_add_prereq(&goal->graph, &item_goal_flippers->graph);
+        ap_req_require(&goal->req, 0, REQUIREMENT_FLIPPERS);
     }
     return goal;
 }
@@ -218,7 +229,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     case TASK_GOTO_POINT:
         switch (task->state) {
         case 0:
-            rc = ap_pathfind_node(task->node);
+            rc = ap_pathfind_node(task->node, true, 0);
             if (rc < 0) return RC_FAIL;
             task->timeout = rc + 32;
             task->state++;
@@ -289,7 +300,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     case TASK_LIFT_POT:
         switch (task->state) {
         case 0:
-            rc = ap_pathfind_node(task->node);
+            rc = ap_pathfind_node(task->node, true, 0);
             if (rc < 0) return RC_FAIL;
             task->timeout = rc + 32;
             task->state++;
@@ -384,7 +395,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
 }
 
 static int
-ap_goal_score(struct ap_goal * goal)
+ap_goal_score(struct ap_goal * goal, int max_score)
 {
     assert(goal != NULL);
 
@@ -402,8 +413,22 @@ ap_goal_score(struct ap_goal * goal)
         return GOAL_SCORE_UNSATISFIABLE;
     }
     */
+    if (!ap_req_is_satisfied(&goal->req)) {
+        return GOAL_SCORE_UNSATISFIABLE;
+    }
 
     int score = 0;
+
+    if (*ap_ram.inventory_sword == 0 && goal->type != GOAL_NPC) {
+        score += 10000;
+    }
+    /*
+    if (*ap_ram.inventory_sword == 0 && !(goal->node == NULL || goal->node->sprite_type == 0x73 || goal->node->sprite_subtype == 0x100)) {
+        //score += 1000000;
+        return GOAL_SCORE_UNSATISFIABLE;
+    }
+    */
+
     //if (goal->type != GOAL_SCRIPT && goal->type != GOAL_NPC) {
     //    score += 1000000;
     //}
@@ -448,20 +473,27 @@ ap_goal_score(struct ap_goal * goal)
         break;
     }
 
+    /*
     if (ap_graph_is_blocked(&goal->graph)) {
         return GOAL_SCORE_UNSATISFIABLE;
     }
+    */
 
     if (goal->node != NULL) {
-        struct xy link = ap_link_xy();
-        int heuristic = ap_path_heuristic(link, goal->node->tl, goal->node->br);
-        if (heuristic < 0) {
-            return GOAL_SCORE_UNSATISFIABLE;
+        //struct xy link = ap_link_xy();
+        //int heuristic = ap_path_heuristic(link, goal->node->tl, goal->node->br);
+        int max_distance = max_score - score;
+        if (max_distance <= 0) {
+            return GOAL_SCORE_GT_LIMIT;
         }
-        score += heuristic;
+        int distance = ap_pathfind_node(goal->node, false, max_distance);
+        if (distance < 0) {
+            return GOAL_SCORE_UNSATISFIABLE;
+        } else if (distance > max_distance) {
+            return GOAL_SCORE_GT_LIMIT;
+        }
+        score += distance;
     }
-
-    if (score == 100147) { score *= 10; }
 
     return score;
 }
@@ -485,7 +517,7 @@ ap_goal_complete(struct ap_goal * goal)
     }
 
     LL_EXTRACT(goal);
-    ap_graph_mark_done(&goal->graph);
+    //ap_graph_mark_done(&goal->graph);
     //free(goal);
     if (ap_active_goal == goal)
         ap_active_goal = NULL;
@@ -500,7 +532,7 @@ ap_goal_fail(struct ap_goal * goal)
     if (goal->attempts > 3) {
         LOG(TERM_BOLD("Permafailing goal: ") TERM_RED(TERM_BOLD(PRIGOAL)), PRIGOALF(goal));
         LL_EXTRACT(goal);
-        ap_graph_extract(&goal->graph);
+        //ap_graph_extract(&goal->graph);
     }
     if (ap_active_goal == goal)
         ap_active_goal = NULL;
@@ -518,15 +550,14 @@ retry_new_goal:;
     int min_score = INT_MAX;
     struct ap_goal * min_goal = NULL;
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
-        int score = ap_goal_score(goal);
-        goal->last_score = score;
+        int score = goal->last_score; // ap_goal_score(goal);
         if (score == GOAL_SCORE_COMPLETE) {
             struct ap_goal * g = goal;
             goal = goal->prev;
             ap_goal_complete(g);
             continue;
         }
-        if (score == GOAL_SCORE_UNSATISFIABLE) {
+        if (score == GOAL_SCORE_UNSATISFIABLE || score == GOAL_SCORE_GT_LIMIT) {
             continue;
         }
         assert(score >= 0);
@@ -565,7 +596,7 @@ retry_new_goal:;
         //task->item = 0x4;
 
         struct ap_node * node = min_goal->node;
-        int rc = ap_pathfind_node(node);
+        int rc = ap_pathfind_node(node, true, 0);
         if (rc < 0) {
             ap_goal_fail(min_goal);
             ap_active_goal = NULL;
@@ -680,15 +711,4 @@ ap_plan_evaluate(uint16_t * joypad)
 void
 ap_plan_init()
 {
-    struct ap_goal * goal = NULL;
-
-    item_goal_bombs = goal = ap_goal_append();
-    goal->type = GOAL_ITEM;
-    goal->item = INVENTORY_BOMBS;
-    snprintf(goal->name, sizeof goal->name, "get: %s", ap_inventory_names[goal->item]);
-
-    item_goal_flippers = goal = ap_goal_append();
-    goal->type = GOAL_ITEM;
-    goal->item = INVENTORY_FLIPPERS;
-    snprintf(goal->name, sizeof goal->name, "get: %s", ap_inventory_names[goal->item]);
 }

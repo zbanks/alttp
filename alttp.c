@@ -4,6 +4,7 @@
 #include "ap_math.h"
 #include "ap_snes.h"
 #include "ap_plan.h"
+#include "ap_req.h"
 
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
@@ -15,6 +16,8 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
     *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
 
+    ap_req_update();
+
     static bool has_imported = false;
     if (!has_imported) {
         LOG("importing");
@@ -24,7 +27,10 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         ap_map_export("map_state_reflect.txt");
         ap_print_state();
         ap_print_map_full();
-        ap_graph_print();
+        //ap_graph_print();
+        char reqs[4096];
+        ap_req_print(NULL, reqs);
+        LOGB("Current requirements satisfied: %s", reqs);
         ap_print_map_screen(NULL);
         //ap_print_goals();
         //exit(0);
@@ -116,9 +122,12 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     //INFO("%u L:" PRIXY " M: " PRIXY "," PRIXY " m %u", *ap_ram.dungeon_room, PRIXYF(ap_link_xy()), PRIXYF(topleft), PRIXYF(bottomright), XYMAPSCREEN(topleft));
 
     static uint16_t x = 0;
-    if (x++ == 400) {
+    if (x++ == 4000) {
         ap_print_map_full();
-        ap_graph_print();
+        //ap_graph_print();
+        char reqs[4096];
+        ap_req_print(NULL, reqs);
+        LOGB("Current requirements satisfied: %s", reqs);
         char filename[128];
         snprintf(filename, sizeof filename, "map_state.6.%08u.txt", frame);
         ap_map_export(filename);

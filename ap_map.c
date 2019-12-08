@@ -865,9 +865,11 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             //assert_bp(i != 11);
             struct xy center = XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl);
             center = XYOP1(center, / 8);
+            /*
             if (i == 11) {
                 LOG(TERM_BOLD("11:") " " PRIXYV, PRIXYVF(center));
             }
+            */
             for (int dx = -2; dx < 4; dx++) {
                 for (int dy = -2; dy < 4; dy++) {
                     struct xy ds = XYOP2(center, +, XY(dx, dy));
@@ -1084,8 +1086,13 @@ search_done:;
 }
 
 static int
-ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit)
+ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit, int _max_distance)
 {
+    uint64_t max_distance = UINT64_MAX;
+    if (_max_distance > 0) {
+        max_distance = (uint64_t) _max_distance;
+    }
+
     struct ap_screen * start_screen = map_screens[XYMAPSCREEN(start_xy)];
     if (start_screen == NULL) {
         LOG("start screen == NULL");
@@ -1133,6 +1140,8 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         uint64_t distance;
         if (pq_pop(pq, &distance, &node) < 0) 
             goto search_failed;
+        if (distance > max_distance)
+            goto search_too_far;
         if (node->pgsearch.iter == iter + 1)
             continue;
         if (ap_node_islocked(node))
@@ -1187,8 +1196,11 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
             }
         }
     }
+search_too_far:
+    if (commit) LOG("Search exceeded limit after %zu steps (max_distance=%d)", r, _max_distance);
+    return _max_distance + 1;
 search_failed:
-    if (commit) LOG("Search failed after %zu steps", r);
+    if (commit) LOG("Search failed after %zu steps (max_distance=%d)", r, _max_distance);
     return -1;
 search_done:
     LOG("Search done in %zu steps, pq size = %zu", r, pq_size(pq));
@@ -1335,7 +1347,8 @@ ap_print_map_full()
                     continue;
                 }
                 if (XYIN(xy, goal->node->tl, goal->node->br)) {
-                    if (ap_graph_is_blocked(&goal->graph)) {
+                    //if (ap_graph_is_blocked(&goal->graph)) {
+                    if (!ap_req_is_satisfied(&goal->req)) {
                         fprintf(mapf, "%c%c%c", 200, 0, 100);
                     } else {
                         fprintf(mapf, "%c%c%c", 255, 255 - goal->attempts * 64, 0);
@@ -1410,7 +1423,7 @@ ap_print_state()
 }
 
 int
-ap_pathfind_node(struct ap_node * node)
+ap_pathfind_node(struct ap_node * node, bool commit, int max_distance)
 {
     /*
     if (node->adjacent_direction) {
@@ -1420,7 +1433,7 @@ ap_pathfind_node(struct ap_node * node)
     }
     */
     struct xy link = ap_link_xy();
-    return ap_pathfind_global(link, node, true);
+    return ap_pathfind_global(link, node, commit, max_distance);
 }
 
 static void
@@ -1577,6 +1590,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
     }
 
     // Update Graph
+    /*
     if (new_node->goal != NULL) {
         ap_graph_add_prereq(&new_node->goal->graph, &screen->graph);
 
@@ -1598,6 +1612,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
             }
         }
     }
+    */
 
     if (strcmp(new_node->name, "0x198A D 4") == 0) {
         new_node->_debug_blocked = false;
@@ -1770,7 +1785,7 @@ ap_update_map_screen(bool force)
                     break;
                 }
             }
-            ap_graph_init(&screen->graph, screen->name);
+            //ap_graph_init(&screen->graph, screen->name);
             LL_INIT(screen->node_list);
             if (screen->info) {
                 snprintf(screen->name, sizeof screen->name, "%s%s " PRIXY " x " PRIXY, screen->info->name, suffix, PRIXYF(cell_tl), PRIXYF(cell_br));
@@ -1798,7 +1813,7 @@ ap_update_map_screen(bool force)
         ap_map_add_nodes_to_screen(screen);
     }
 
-    ap_graph_mark_done(&screen->graph);
+    //ap_graph_mark_done(&screen->graph);
     ap_sprites_print();
     ap_print_map_screen(screen);
     printf("Nodes: [(un)Reachable? (un)Adjacent?] (tl x br) type \"name\"\n");
@@ -2283,7 +2298,7 @@ ap_map_import(const char * filename) {
                     break;
                 }
             }
-            ap_graph_init(&screen->graph, screen->name);
+            //ap_graph_init(&screen->graph, screen->name);
             LL_INIT(screen->node_list);
             const char * suffix = "";
             if (XYINDOORS(screen->tl)) {

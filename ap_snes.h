@@ -728,6 +728,7 @@ static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
     X(0x12, BLUE_CANE) \
     X(0x13, MAGIC_CAPE) \
     X(0x14, MIRROR) \
+    X(0x1A, SWORD) \
     X(0x57, FLIPPERS) \
 
 enum {
