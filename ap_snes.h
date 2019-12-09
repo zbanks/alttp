@@ -123,6 +123,7 @@ AP_RAM_LIST
 #undef X
 } ap_ram;
 
+extern uint32_t ap_frame;
 extern struct ap_snes9x * ap_emu;
 
 #define TILE_ATTR_LIST \

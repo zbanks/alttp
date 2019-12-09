@@ -8,6 +8,9 @@
 
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
+    assert_bp(frame == 0 || frame == ap_frame + 1);
+    ap_frame = frame;
+
     *ap_emu->info_string_ptr = ap_info_string;
     ap_sprites_update();
 

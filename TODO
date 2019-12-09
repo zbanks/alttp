@@ -5,9 +5,9 @@
 * Bomb walls
 * DONE: Pre-programmed movement for certain tasks
 * Reset goal attempts count when re-visiting screens
-* Remove map/geography from ap_graph
-* Cache node reachability within a screen
-    - Can be used to speed up ap_pathfind_global
-    - Invalidate 1 screen's worth when entering screen
-    - Possibly invalidate everything & recompute when new items are acquired? 
-* Refactor ap_pathfind_global to use
+* DONE Remove map/geography from ap_graph
+* DONE: Cache node reachability within a screen
+    - DONE: Can be used to speed up ap_pathfind_global
+    - DONE: Invalidate 1 screen's worth when entering screen
+    - DONE: Have ap_pathfind_global use cache
+* Invalidate screen distance cache when items are acquired (e.g. flippers, lift)

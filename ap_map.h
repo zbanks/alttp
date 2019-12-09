@@ -82,9 +82,10 @@ NODE_TYPE_LIST
     bool _debug_blocked;
     char name[32];
 
+    // Global Search State
     struct ap_node_pgsearch {
         uint64_t iter;
-        struct xy xy;
+        //struct xy xy;
         struct ap_node * from;
         uint64_t distance;
     } pgsearch;
@@ -102,6 +103,14 @@ struct ap_screen {
     char name[64];
     uint8_t attr_cache[0x80][0x80];
     //struct ap_graph graph;
+
+    struct ap_node_distance {
+        struct ap_node *src;
+        struct ap_node *dst;
+        uint64_t distance;
+    } * distances;
+    size_t distances_length;
+    size_t distances_capacity;
 };
 
 struct ap_script {

@@ -736,16 +736,20 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
 
     struct point_state;
     static struct point_state {
+        // Parts that need to be cleared each time this function is called
         struct point_state * from;
+        uint32_t gscore;
+        uint32_t fscore;
+
+        // Parts that can be cached for the same (screen, frame #)
         struct xy xy;
         uint16_t tile_attrs;
         uint8_t raw_tile;
         uint8_t ledge;
         uint8_t corner;
-        uint32_t gscore;
-        uint32_t fscore;
         uint32_t cost;
     } buf[0x82 * 0x82]; 
+
     // CORNER is used to identify boundaries of 2x2 tiles (like bushes)
     enum corner {
         CORNER_NONE = 0,
@@ -760,127 +764,147 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
         printf("error: grid too large: " PRIXY "\n", PRIXYF(grid));
         return -1;
     }
-    for (size_t i = 0; i < 0x82 * 0x82; i++) {
-        buf[i].ledge = 0xFF;
-    } 
+
     // Make a state[y][x]
     struct point_state (*state)[grid.x + 2] = (void *) &buf[0x83];
 
-    for (uint16_t y = 0; y < grid.y; y++) {
-        for (uint16_t x = 0; x < grid.x; x++) {
-            assert_bp(&state[y][x] == &buf[0x83 + (grid.x + 2) * y + x]);
-            state[y][x].from = NULL;
-            state[y][x].xy = XYOP1(XYOP2(XY(x, y), +, tl_offset), * 8);
-            state[y][x].gscore = (uint32_t) -1;
-            state[y][x].fscore = (uint32_t) -1;
-            state[y][x].cost = 0;
-            state[y][x].corner = CORNER_NONE;
-            state[y][x].ledge = 0;
-            state[y][x].tile_attrs = 0;
+    // Check if cache is valid
+    static struct ap_screen *last_screen = NULL;
+    static uint32_t last_frame = 0;
+    if (last_screen == screen && last_frame == ap_frame) {
+        for (uint16_t y = 0; y < grid.y; y++) {
+            for (uint16_t x = 0; x < grid.x; x++) {
+                assert_bp(&state[y][x] == &buf[0x83 + (grid.x + 2) * y + x]);
+                state[y][x].from = NULL;
+                state[y][x].gscore = (uint32_t) -1;
+                state[y][x].fscore = (uint32_t) -1;
+            }
         }
-    }
-    for (uint16_t y = 0; y < grid.y; y++) {
-        for (uint16_t x = 0; x < grid.x; x++) {
-            uint32_t cost = 0;
-            struct xy mapxy = XYOP2(XYOP1(XY(x, y), * 8), +, screen->tl);
-            uint8_t raw_tile = ap_map_attr(mapxy);
-            uint16_t tile = ap_tile_attrs[raw_tile];
-            state[y][x].tile_attrs = tile;
-            state[y][x].raw_tile = raw_tile;
-            uint8_t ledge_mask = 0;
-            if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
-            //if (tile & (TILE_ATTR_WALK)) {
-                cost = 0;
-            } else if (tile & TILE_ATTR_LDGE) {
-                cost = (1 << 20); // calculated at search time
-                //cost = 0;
-                assert_bp((raw_tile &~0x7) == 0x28);
-                ledge_mask = 1ul << (raw_tile & 0x7);
-            } else if (tile & TILE_ATTR_LFT0) {
-                cost = 40;
-                if (state[y][x].corner == CORNER_NONE)  {
-                    state[y][x].corner = CORNER_TL;
-                    state[y][x+1].corner = CORNER_TR;
-                    state[y+1][x].corner = CORNER_BL;
-                    state[y+1][x+1].corner = CORNER_BR;
-                    if (state[y][x-1].corner == CORNER_NONE) {
-                        state[y][x-1].corner = CORNER_TA;
-                        state[y+1][x-1].corner = CORNER_BA;
+    } else {
+        last_screen = screen;
+        last_frame = ap_frame;
+
+        for (size_t i = 0; i < 0x82 * 0x82; i++) {
+            buf[i].ledge = 0xFF;
+        } 
+
+        for (uint16_t y = 0; y < grid.y; y++) {
+            for (uint16_t x = 0; x < grid.x; x++) {
+                assert_bp(&state[y][x] == &buf[0x83 + (grid.x + 2) * y + x]);
+                state[y][x].from = NULL;
+                state[y][x].xy = XYOP1(XYOP2(XY(x, y), +, tl_offset), * 8);
+                state[y][x].gscore = (uint32_t) -1;
+                state[y][x].fscore = (uint32_t) -1;
+                state[y][x].cost = 0;
+                state[y][x].corner = CORNER_NONE;
+                state[y][x].ledge = 0;
+                state[y][x].tile_attrs = 0;
+            }
+        }
+        for (uint16_t y = 0; y < grid.y; y++) {
+            for (uint16_t x = 0; x < grid.x; x++) {
+                uint32_t cost = 0;
+                struct xy mapxy = XYOP2(XYOP1(XY(x, y), * 8), +, screen->tl);
+                uint8_t raw_tile = ap_map_attr(mapxy);
+                uint16_t tile = ap_tile_attrs[raw_tile];
+                state[y][x].tile_attrs = tile;
+                state[y][x].raw_tile = raw_tile;
+                uint8_t ledge_mask = 0;
+                if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
+                //if (tile & (TILE_ATTR_WALK)) {
+                    cost = 0;
+                } else if (tile & TILE_ATTR_LDGE) {
+                    cost = (1 << 20); // calculated at search time
+                    //cost = 0;
+                    assert_bp((raw_tile &~0x7) == 0x28);
+                    ledge_mask = 1ul << (raw_tile & 0x7);
+                } else if (tile & TILE_ATTR_LFT0) {
+                    cost = 40;
+                    if (state[y][x].corner == CORNER_NONE)  {
+                        state[y][x].corner = CORNER_TL;
+                        state[y][x+1].corner = CORNER_TR;
+                        state[y+1][x].corner = CORNER_BL;
+                        state[y+1][x+1].corner = CORNER_BR;
+                        if (state[y][x-1].corner == CORNER_NONE) {
+                            state[y][x-1].corner = CORNER_TA;
+                            state[y+1][x-1].corner = CORNER_BA;
+                        }
                     }
+                } else if (XYIN(mapxy, destination_tl, destination_br)) {
+                    cost = 0;
+                } else if (raw_tile == 0x1C) {
+                    cost = 1000;
+                } else {
+                    cost = (1 << 20);
                 }
-            } else if (XYIN(mapxy, destination_tl, destination_br)) {
-                cost = 0;
-            } else if (raw_tile == 0x1C) {
-                cost = 1000;
-            } else {
-                cost = (1 << 20);
-            }
 
-            state[y-0][x-0].cost += cost;
-            state[y-0][x-1].cost += cost;
-            state[y-1][x-0].cost += cost;
-            state[y-1][x-1].cost += cost;
+                state[y-0][x-0].cost += cost;
+                state[y-0][x-1].cost += cost;
+                state[y-1][x-0].cost += cost;
+                state[y-1][x-1].cost += cost;
 
-            state[y-0][x-0].ledge |= ledge_mask;
-            state[y-0][x-1].ledge |= ledge_mask;
-            state[y-1][x-0].ledge |= ledge_mask;
-            state[y-1][x-1].ledge |= ledge_mask;
+                state[y-0][x-0].ledge |= ledge_mask;
+                state[y-0][x-1].ledge |= ledge_mask;
+                state[y-1][x-0].ledge |= ledge_mask;
+                state[y-1][x-1].ledge |= ledge_mask;
 
-            if (x < 1 || x >= grid.x - 1 ||
-                y < 1 || y >= grid.y - 1) {
-                state[y][x].cost = (1 << 20);
-            } else if (x < 3 || x >= grid.x - 3 ||
-                y < 3 || y >= grid.y - 3) {
-                state[y][x].cost += 10000;
-            }
-        }
-    }
-    for (volatile uint8_t i = 0; i < 16; i++) {
-        if (ap_sprites[i].type == 0) {
-            continue;
-        }
-        if (!XYIN(ap_sprites[i].hitbox_tl, screen->tl, screen->br)) {
-            continue;
-        }
-        if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY && 
-            ap_sprites[i].state != 0x00) { // dead
-            struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
-            for (int dx = -4; dx <= 4; dx++) {
-                for (int dy = -4; dy <= 4; dy++) {
-                    struct xy ds = XYOP2(center, +, XY(dx, dy));
-                    if (!XYUNDER(ds, grid)) {
-                        continue;
-                    }
-                    state[ds.y][ds.x].cost += MAX(0, 7 - (ABS(dx) + ABS(dy))) * 100;
-                }
-            }
-        }
-        if ((ap_sprites[i].attrs & SPRITE_ATTR_BLOK) &&
-            ap_sprites[i].state != 0x0A && // carried
-            ap_sprites[i].state != 0x06) { // thrown
-            assert_bp(ap_sprites[i].state == 0x08 || 
-                      ap_sprites[i].state == 0x09 || 
-                      ap_sprites[i].state == 0x00);
-            //volatile struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
-            //assert_bp(i != 11);
-            struct xy center = XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl);
-            center = XYOP1(center, / 8);
-            /*
-            if (i == 11) {
-                LOG(TERM_BOLD("11:") " " PRIXYV, PRIXYVF(center));
-            }
-            */
-            for (int dx = -2; dx < 4; dx++) {
-                for (int dy = -2; dy < 4; dy++) {
-                    struct xy ds = XYOP2(center, +, XY(dx, dy));
-                    if (!XYUNDER(ds, grid)) {
-                        continue;
-                    }
-                    state[ds.y][ds.x].cost += (1 << 20);
+                if (x < 1 || x >= grid.x - 1 ||
+                    y < 1 || y >= grid.y - 1) {
+                    state[y][x].cost = (1 << 20);
+                } else if (x < 3 || x >= grid.x - 3 ||
+                    y < 3 || y >= grid.y - 3) {
+                    state[y][x].cost += 10000;
                 }
             }
         }
+        for (uint8_t i = 0; i < 16; i++) {
+            if (ap_sprites[i].type == 0) {
+                continue;
+            }
+            if (!XYIN(ap_sprites[i].hitbox_tl, screen->tl, screen->br)) {
+                continue;
+            }
+            if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY && 
+                ap_sprites[i].state != 0x00) { // dead
+                struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
+                for (int dx = -4; dx <= 4; dx++) {
+                    for (int dy = -4; dy <= 4; dy++) {
+                        struct xy ds = XYOP2(center, +, XY(dx, dy));
+                        if (!XYUNDER(ds, grid)) {
+                            continue;
+                        }
+                        state[ds.y][ds.x].cost += MAX(0, 7 - (ABS(dx) + ABS(dy))) * 100;
+                    }
+                }
+            }
+            if ((ap_sprites[i].attrs & SPRITE_ATTR_BLOK) &&
+                ap_sprites[i].state != 0x0A && // carried
+                ap_sprites[i].state != 0x06) { // thrown
+                assert_bp(ap_sprites[i].state == 0x08 || 
+                        ap_sprites[i].state == 0x09 || 
+                        ap_sprites[i].state == 0x00);
+                //volatile struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
+                //assert_bp(i != 11);
+                struct xy center = XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl);
+                center = XYOP1(center, / 8);
+                /*
+                if (i == 11) {
+                    LOG(TERM_BOLD("11:") " " PRIXYV, PRIXYVF(center));
+                }
+                */
+                for (int dx = -2; dx < 4; dx++) {
+                    for (int dy = -2; dy < 4; dy++) {
+                        struct xy ds = XYOP2(center, +, XY(dx, dy));
+                        if (!XYUNDER(ds, grid)) {
+                            continue;
+                        }
+                        state[ds.y][ds.x].cost += (1 << 20);
+                    }
+                }
+            }
+        }
     }
+
     // Hack to round when there is an obstacle nearby
     // Doesn't handle diagonals perfectly, but should be fine?
     if ((start_xy.x & 0x7) != 0 &&
@@ -1086,6 +1110,24 @@ search_done:;
 }
 
 static int
+ap_pathfind_node_distance(const struct ap_node * src, const struct ap_node * dst) 
+{
+    assert(src->screen == dst->screen);
+    if (src->type == NODE_NONE) {
+        // Fake node; have to use ap_pathfind_local
+        return ap_pathfind_local(src->screen, src->tl, dst->tl, dst->br, false);
+    }
+    assert(dst->type != NODE_NONE);
+    const struct ap_node_distance *dists = src->screen->distances;
+    for (size_t i = 0; i < src->screen->distances_length; i++) {
+        if (dists[i].src == src && dists[i].dst == dst) {
+            return dists[i].distance;
+        }
+    }
+    return -1;
+}
+
+static int
 ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit, int _max_distance)
 {
     uint64_t max_distance = UINT64_MAX;
@@ -1108,9 +1150,11 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
     struct ap_node * start_node = &_start_node;
     *start_node = (struct ap_node) {
         .screen = start_screen,
+        .tl = start_xy,
+        .type = NODE_NONE,
         .pgsearch = {
             .iter = iter,
-            .xy = start_xy,
+            //.xy = start_xy,
             .from = NULL,
             .distance = 0,
         }
@@ -1160,7 +1204,7 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
                  node->adjacent_node->pgsearch.iter < iter) {
                 node->adjacent_node->pgsearch = (struct ap_node_pgsearch) {
                     .iter = iter,
-                    .xy = XYMID(node->adjacent_node->tl, node->adjacent_node->br),
+                    //.xy = XYMID(node->adjacent_node->tl, node->adjacent_node->br),
                     .from = node,
                     .distance = distance,
                 };
@@ -1178,7 +1222,8 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
                 continue;
             if (adj_node->pgsearch.iter == iter + 1)
                 continue;
-            int delta_distance = ap_pathfind_local(node->screen, node->pgsearch.xy, adj_node->tl, adj_node->br, false);
+            //int delta_distance = ap_pathfind_local(node->screen, node->pgsearch.xy, adj_node->tl, adj_node->br, false);
+            int delta_distance = ap_pathfind_node_distance(node, adj_node);
             if (delta_distance < 0)
                 continue;
 
@@ -1188,7 +1233,7 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
                  adj_node->pgsearch.iter < iter) {
                  adj_node->pgsearch = (struct ap_node_pgsearch) {
                     .iter = iter,
-                    .xy = XYMID(adj_node->tl, adj_node->br),
+                    //.xy = XYMID(adj_node->tl, adj_node->br),
                     .from = node,
                     .distance = distance,
                 };
@@ -1211,7 +1256,7 @@ search_done:
     size_t count = 0;
     while (next != NULL) {
         assert(next->pgsearch.iter == iter + 1);
-        LOG("    %zu: %s " PRIXYV " %ld", count, next->name, PRIXYVF(next->pgsearch.xy), next->pgsearch.distance);
+        LOG("    %zu: %s %ld", count, next->name, next->pgsearch.distance);
         next = next->pgsearch.from;
         count++;
     }
@@ -1734,6 +1779,50 @@ ap_update_map_screen_nodes()
 static void ap_map_add_nodes_to_screen(struct ap_screen * screen);
 static void ap_map_add_scripts_to_screen(struct ap_screen * screen);
 
+static int ap_node_distance_cmp(const void *a, const void *b) {
+    return memcmp(a, b, sizeof(struct ap_node_distance));
+}
+
+static void ap_map_screen_update_distances(struct ap_screen * screen) {
+    size_t n_transition_nodes = 0;
+    size_t n_other_nodes = 0;
+    for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+        if (node->type == NODE_TRANSITION) {
+            n_transition_nodes++;
+        } else {
+            n_other_nodes++;
+        }
+    }
+
+    size_t req_capcacity = n_transition_nodes * (n_transition_nodes + n_other_nodes);
+    if (req_capcacity > screen->distances_capacity) {
+        screen->distances = NONNULL(realloc(screen->distances, req_capcacity * sizeof(*screen->distances)));
+        screen->distances_capacity = req_capcacity;
+    }
+    memset(screen->distances, 0, req_capcacity * sizeof(*screen->distances));
+
+    size_t d = 0;
+    for (struct ap_node * src = screen->node_list->next; src != screen->node_list; src = src->next) {
+        if (src->type != NODE_TRANSITION) {
+            continue;
+        }
+        for (struct ap_node * dst = screen->node_list->next; dst != screen->node_list; dst = dst->next) {
+            int distance = ap_pathfind_local(screen, XYMID(src->tl, src->br), dst->tl, dst->br, false);
+            if (distance < 0) {
+                continue;
+            }
+            screen->distances[d++] = (struct ap_node_distance) {
+                .src = src,
+                .dst = dst,
+                .distance = (uint64_t) distance,
+            };
+        }
+    }
+    assert(d <= req_capcacity);
+    screen->distances_length = d;
+    qsort(screen->distances, d, sizeof(*screen->distances), &ap_node_distance_cmp);
+}
+
 struct ap_screen *
 ap_update_map_screen(bool force)
 {
@@ -1812,6 +1901,8 @@ ap_update_map_screen(bool force)
         ap_screen_refresh_cache(screen);
         ap_map_add_nodes_to_screen(screen);
     }
+
+    ap_map_screen_update_distances(screen);
 
     //ap_graph_mark_done(&screen->graph);
     ap_sprites_print();
@@ -2367,4 +2458,12 @@ ap_map_import(const char * filename) {
     size_t unmatched_pm = pm_destroy(pm);
     LOG("unmapped: %zu", unmatched_pm);
     assert_bp(unmatched_pm == 0);
+
+    for (struct xy xy = XY(0, 0); xy.y < 0x8000; xy.y += 0x100) {
+        for (xy.x = 0; xy.x < 0xC000; xy.x += 0x100) {
+            struct ap_screen * screen = map_screens[XYMAPSCREEN(xy)];
+            if (screen == NULL || !XYEQ(screen->tl, xy)) continue;
+            ap_map_screen_update_distances(screen);
+        }
+    }
 }

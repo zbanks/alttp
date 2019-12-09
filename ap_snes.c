@@ -4,6 +4,7 @@
 #include "ap_map.h"
 #include "ap_plan.h"
 
+uint32_t ap_frame = 0;
 struct ap_ram ap_ram;
 struct ap_snes9x * ap_emu = NULL;
 
