@@ -117,6 +117,10 @@ struct ap_script {
     struct xy start_tl;
     int start_item;
     const char * sequence;
+    enum script_type {
+        SCRIPT_SEQUENCE,
+        SCRIPT_KILLALL,
+    } type;
     char name[32];
 };
 
@@ -166,6 +170,9 @@ int
 ap_pathfind_node(struct ap_node * node, bool commit, int max_distance);
 
 int
+ap_pathfind_sprite(size_t sprite_idx);
+
+int
 ap_set_script(const struct ap_script * script);
 
 int
@@ -179,3 +186,6 @@ ap_map_import(const char * filename);
 
 void
 ap_map_export(const char * filename);
+
+void
+ap_map_tick(void);

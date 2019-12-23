@@ -11,3 +11,7 @@
     - DONE: Invalidate 1 screen's worth when entering screen
     - DONE: Have ap_pathfind_global use cache
 * Invalidate screen distance cache when items are acquired (e.g. flippers, lift)
+* Figure out how keys should work with the ap_req system
+    - How to encode which doors need keys?
+* Prune "clearly invalid" unreachable, walkable edges on screens
+    - May not be important once the whole map exists

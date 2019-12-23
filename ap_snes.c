@@ -4,13 +4,14 @@
 #include "ap_map.h"
 #include "ap_plan.h"
 
-uint32_t ap_frame = 0;
+uint64_t ap_frame = 0;
 struct ap_ram ap_ram;
 struct ap_snes9x * ap_emu = NULL;
 
 char ap_info_string[INFO_STRING_SIZE];
 bool ap_debug;
 struct ap_sprite ap_sprites[16];
+bool ap_sprites_changed;
 struct ap_pushblock ap_pushblocks[16];
 
 const char * const ap_tile_attr_names[] = {
@@ -64,7 +65,8 @@ AP_RAM_LIST
     //ap_emu->load("well");
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
-    ap_emu->load("home");
+    //ap_emu->load("home");
+    ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
     //ap_emu->load("blinds_house");
 
@@ -89,6 +91,15 @@ ap_sprite_attrs_for_type(uint8_t type, uint16_t subtype)
 
 void
 ap_sprites_update() {
+    ap_sprites_changed = false;
+
+    for (size_t i = 0; i < 16; i++) {
+        struct ap_sprite * sprite = &ap_sprites[i];
+        if (ap_ram.sprite_type[i] != sprite->type) {
+            ap_sprites_changed = true;
+        }
+    }
+
     memset(ap_sprites, 0, sizeof ap_sprites);
     for (size_t i = 0; i < 16; i++) {
         struct ap_sprite * sprite = &ap_sprites[i];
@@ -98,6 +109,7 @@ ap_sprites_update() {
         sprite->type = ap_ram.sprite_type[i];
         sprite->subtype = ap_ram.sprite_subtype1[i] | (ap_ram.sprite_subtype2[i] << 8);
         sprite->interaction = ap_ram.sprite_interaction[i];
+        sprite->hp = ap_ram.sprite_hp[i];
 
         uint16_t attrs = ap_sprite_attrs[sprite->type];
         if (attrs & SPRITE_ATTR_SUBT) {
@@ -111,6 +123,30 @@ ap_sprites_update() {
             attrs &= ~SPRITE_ATTR_SUBT;
         }
         sprite->attrs = attrs;
+
+        switch (sprite->type) {
+            // Guard-like sprites
+            case 0x41:
+            case 0x42:
+            case 0x43:
+            case 0x44:
+            case 0x45:
+            case 0x46:
+            case 0x47:
+            case 0x48:
+            case 0x49:
+            case 0x4a:
+            case 0x4b:
+            case 0x6a:
+                sprite->active = false;
+                if ((sprite->interaction & 0x1F) && sprite->hp > 0) {
+                    sprite->active = true;
+                }
+                break;
+            default:
+                sprite->active = sprite->state != 0;
+                break;
+        }
 
         sprite->hitbox_tl = XY(ap_ram.sprite_x_lo[i], ap_ram.sprite_y_lo[i]);
         sprite->hitbox_tl.x += ap_ram.sprite_x_hi[i] << 8u;
@@ -135,8 +171,19 @@ ap_sprites_update() {
         sprite->br.x += ap_ram.hitbox_width[h];
         sprite->br.y += ap_ram.hitbox_height[h];
 
-        if (!(sprite->attrs & SPRITE_ATTR_BLOK)) {
+        if (sprite->attrs & SPRITE_ATTR_BLKF) {
+            assert(!(sprite->attrs & SPRITE_ATTR_BLKS));
+            sprite->hitbox_tl = sprite->tl;
+            sprite->hitbox_br = sprite->br;
+        } else if (sprite->attrs & SPRITE_ATTR_BLKS) {
+            sprite->hitbox_br = XYOP1(sprite->hitbox_tl, +15);
+        } else {
             sprite->hitbox_tl = XY(0, 0);
+            sprite->hitbox_br = XY(0, 0);
+        }
+        if (sprite->type == 0x40) {
+            // Hyrule Castle Barrier to Agahnim's Tower
+            sprite->hitbox_br.y += 16;
         }
     }
 
@@ -174,10 +221,10 @@ ap_sprites_print()
     for (uint8_t i = 0; i < 16; i++) {
         if (ap_sprites[i].type == 0)
             continue;
-        LOG("Sprite %-2u: attrs=%s type=%#x subtype=%#x state=%#x inter=%#x " PRIBBV " dist=%d",
-            i, ap_sprite_attr_name(ap_sprites[i].attrs),
+        LOG("Sprite %-2u: %c attrs=%s type=%#x subtype=%#x state=%#x inter=%#x hp=%#x " PRIBBV " dist=%d",
+            i, "qA"[!!ap_sprites[i].active], ap_sprite_attr_name(ap_sprites[i].attrs),
             ap_sprites[i].type, ap_sprites[i].subtype, ap_sprites[i].state,
-            ap_sprites[i].interaction, 
+            ap_sprites[i].interaction, ap_sprites[i].hp,
             PRIBBVF(ap_sprites[i]), XYL1BOXDIST(link, ap_sprites[i].tl, ap_sprites[i].br));
     }
 

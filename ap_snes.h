@@ -21,7 +21,7 @@
 #define JOYPAD_TEST(key) ((*joypad) & SNES_MASK(key))
 #define JOYPAD_SET(key) ((*joypad) |= SNES_MASK(key))
 #define JOYPAD_CLEAR(key) ((*joypad) &= (uint16_t) ~SNES_MASK(key))
-#define JOYPAD_MASH(key) ({ if(*ap_ram.frame_counter & 1) { JOYPAD_SET(key); } else { JOYPAD_CLEAR(key); } })
+#define JOYPAD_MASH(key, rate) ({ if(*ap_ram.frame_counter & (rate)) { JOYPAD_SET(key); } else { JOYPAD_CLEAR(key); } })
 #define JOYPAD_EVENT(btn) ({\
     static bool _debounce = false; \
     bool _ret = false; \
@@ -66,6 +66,7 @@
     X(sprite_state,         uint8_t,   0x7E0DD0)   \
     X(sprite_type,          uint8_t,   0x7E0E20)   \
     X(sprite_subtype1,      uint8_t,   0x7E0E30)   \
+    X(sprite_hp,            uint8_t,   0x7E0E50)   \
     X(sprite_interaction,   uint8_t,   0x7E0E60)   \
     X(sprite_subtype2,      uint8_t,   0x7E0E80)   \
     X(sprite_lower_level,   uint8_t,   0x7E0F20)   \
@@ -114,6 +115,9 @@
     X(inventory_base,       uint8_t,   0x7EF33F)   \
     X(inventory_bombs,      uint8_t,   0x7EF343)   \
     X(inventory_sword,      uint8_t,   0x7EF359)   \
+    X(dungeon_bigkeys,      uint16_t,  0x7EF366)   \
+    X(dungeon_keys,         uint8_t,   0x7EF37C)   \
+    X(dungeon_current_keys, uint8_t,   0x7EF36F)   \
     X(health_current,       uint8_t,   0x7EF36D)   \
     X(health_capacity,      uint8_t,   0x7EF36C)   \
 
@@ -123,7 +127,6 @@ AP_RAM_LIST
 #undef X
 } ap_ram;
 
-extern uint32_t ap_frame;
 extern struct ap_snes9x * ap_emu;
 
 #define TILE_ATTR_LIST \
@@ -183,11 +186,11 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x2f] = TILE_ATTR_LDGE, // down right
 
     // Door transitions, unsure how to handle, see 0x8e & 0x8f
-    [0x30] = TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_MERG,
+    [0x30] = 0, // TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_MERG,
     [0x31] = 0,
     [0x32] = 0,
     [0x33] = 0,
-    [0x34] = TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_MERG,
+    [0x34] = 0, // TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_MERG,
     [0x35] = 0,
     [0x36] = 0,
     [0x37] = 0,
@@ -237,7 +240,7 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x7E] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
     [0x7F] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
 
-    [0x80] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x80] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // open door?
     [0x81] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
     [0x82] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // lockable door?
     [0x83] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
@@ -270,15 +273,15 @@ static const uint16_t ap_tile_attrs[256] = {
     [0xA4] = TILE_ATTR_WALK,
     [0xA5] = TILE_ATTR_WALK,
 
-    [0xF0] = TILE_ATTR_DOOR, // Locked door, 0x8000?
-    [0xF1] = TILE_ATTR_DOOR, // Locked door, 0x4000?
-    [0xF2] = TILE_ATTR_DOOR, // Locked door
-    [0xF3] = TILE_ATTR_DOOR, // Locked door
-    [0xF4] = TILE_ATTR_DOOR, // Locked door
-    [0xF5] = TILE_ATTR_DOOR, // Locked door
-    [0xF6] = TILE_ATTR_DOOR, // Locked door
-    [0xF7] = TILE_ATTR_DOOR, // Locked door
-    [0xF8] = TILE_ATTR_DOOR, // Locked door, 0x8000?
+    [0xF0] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door, 0x8000?
+    [0xF1] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door, 0x4000?
+    [0xF2] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door
+    [0xF3] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door
+    [0xF4] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door
+    [0xF5] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door
+    [0xF6] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door
+    [0xF7] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door
+    [0xF8] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door, 0x8000?
     // Fake/unknown
     [0xFF] = TILE_ATTR_WALK,
 };
@@ -343,7 +346,8 @@ enum ap_link_state {
 
 #define SPRITE_ATTR_LIST \
     X(ENMY) /* Enemy, can hurt */ \
-    X(BLOK) /* Blocked, do not try to walk through */ \
+    X(BLKS) /* Blocked center 2x2 square */ \
+    X(BLKF) /* Blocked full sprite size */ \
     X(SWCH) /* Button / state-changer */ \
     X(ITEM) /* Pick-up */ \
     X(TALK) /* Talk for progression item */ \
@@ -367,12 +371,17 @@ extern struct ap_sprite {
     uint16_t subtype;
     uint8_t state;
     uint8_t interaction;
+    uint8_t hp;
+
+    bool active;
 
     struct xy tl;
     struct xy br;
     struct xy hitbox_tl;
+    struct xy hitbox_br;
     uint16_t attrs;
 } ap_sprites[16];
+extern bool ap_sprites_changed;
 
 extern struct ap_pushblock {
     struct xy tl;
@@ -407,53 +416,53 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x11] = SPRITE_ATTR_ENMY, // One Eyed Giants (bomb throwers) aka Hinox
     [0x12] = SPRITE_ATTR_ENMY, // Moblin Spear Throwers
     [0x13] = SPRITE_ATTR_ENMY, // Helmasaur?
-    [0x14] = SPRITE_ATTR_BLOK, // Gargoyles Domain Gate
+    [0x14] = SPRITE_ATTR_BLKF, // Gargoyles Domain Gate
     [0x15] = SPRITE_ATTR_ENMY, // Fire Faery
-    [0x16] = SPRITE_ATTR_BLOK, // Sahashrala / Aginah, sage of the desert
+    [0x16] = SPRITE_ATTR_BLKF, // Sahashrala / Aginah, sage of the desert
     [0x17] = SPRITE_ATTR_ENMY, // Water Bubbles?
     [0x18] = SPRITE_ATTR_ENMY, // Moldorm
     [0x19] = SPRITE_ATTR_ENMY, // Poe
     [0x1A] = 0, // Dwarf, Mallet, and the shrapnel from it hitting
     [0x1B] = 0, // Arrow in wall?
-    [0x1C] = SPRITE_ATTR_BLOK, // Moveable Statue
-    [0x1D] = SPRITE_ATTR_BLOK, // Weathervane
-    [0x1E] = SPRITE_ATTR_BLOK | SPRITE_ATTR_SWCH, // Crystal Switch
-    [0x1F] = SPRITE_ATTR_BLOK, // Sick Kid with Bug Catching Net
+    [0x1C] = SPRITE_ATTR_BLKF, // Moveable Statue
+    [0x1D] = SPRITE_ATTR_BLKF, // Weathervane
+    [0x1E] = SPRITE_ATTR_BLKF | SPRITE_ATTR_SWCH, // Crystal Switch
+    [0x1F] = SPRITE_ATTR_BLKF, // Sick Kid with Bug Catching Net
 
     [0x20] = SPRITE_ATTR_ENMY, // Bomb Slugs
     [0x21] = SPRITE_ATTR_SWCH, // Push Switch (like in Swamp Palace)
     [0x22] = SPRITE_ATTR_ENMY, // Darkworld Snakebasket
     [0x23] = SPRITE_ATTR_SWCH, // Red Onoff
     [0x24] = SPRITE_ATTR_SWCH, // Blue Onoff
-    [0x25] = SPRITE_ATTR_BLOK, // Tree you can talk to?
+    [0x25] = SPRITE_ATTR_BLKF, // Tree you can talk to?
     [0x26] = SPRITE_ATTR_ENMY, // Charging Octopi?
     [0x27] = SPRITE_ATTR_ENMY, // Dead Rocks? (Gorons bleh)
-    [0x28] = SPRITE_ATTR_BLOK, // Shrub Guy who talks about Triforce / Other storytellers
-    [0x29] = SPRITE_ATTR_BLOK, // Blind Hideout attendant
-    [0x2A] = SPRITE_ATTR_BLOK, // Sweeping Lady
-    [0x2B] = SPRITE_ATTR_BLOK, // Bum under the bridge + smoke and other effects like the fire
-    [0x2C] = SPRITE_ATTR_BLOK, // Lumberjack Bros. 
+    [0x28] = SPRITE_ATTR_BLKF, // Shrub Guy who talks about Triforce / Other storytellers
+    [0x29] = SPRITE_ATTR_BLKF, // Blind Hideout attendant
+    [0x2A] = SPRITE_ATTR_BLKS, // Sweeping Lady
+    [0x2B] = SPRITE_ATTR_BLKS, // Bum under the bridge + smoke and other effects like the fire
+    [0x2C] = SPRITE_ATTR_BLKF, // Lumberjack Bros. 
     [0x2D] = 0, // Telepathic stones?
-    [0x2E] = SPRITE_ATTR_BLOK, // Flute Boys Notes
-    [0x2F] = SPRITE_ATTR_BLOK, // Heart Piece Race guy and girl
-    [0x30] = SPRITE_ATTR_BLOK, // Person? (HM name)
-    [0x31] = SPRITE_ATTR_BLOK, // Fortune Teller / Dwarf swordsmith
-    [0x32] = SPRITE_ATTR_BLOK, // ??? (something with a turning head) 
+    [0x2E] = 0, // Flute Boys Notes
+    [0x2F] = SPRITE_ATTR_BLKS, // Heart Piece Race guy and girl
+    [0x30] = SPRITE_ATTR_BLKF, // Person? (HM name)
+    [0x31] = SPRITE_ATTR_BLKS, // Fortune Teller / Dwarf swordsmith
+    [0x32] = SPRITE_ATTR_BLKF, // ??? (something with a turning head) 
     [0x33] = 0, // Pull the wall for rupees
-    [0x34] = SPRITE_ATTR_BLOK, // ScaredGirl2 (HM name)
-    [0x35] = SPRITE_ATTR_BLOK, // Innkeeper
-    [0x36] = SPRITE_ATTR_BLOK, // Witch / Cane of Byrna?
+    [0x34] = SPRITE_ATTR_BLKF, // ScaredGirl2 (HM name)
+    [0x35] = SPRITE_ATTR_BLKS, // Innkeeper
+    [0x36] = SPRITE_ATTR_BLKF, // Witch / Cane of Byrna?
     [0x37] = 0, // Waterfall
-    [0x38] = SPRITE_ATTR_BLOK, // Arrow Target (e.g. Big Eye in Dark Palace)
-    [0x39] = SPRITE_ATTR_BLOK, // Middle Aged Guy in the desert
+    [0x38] = SPRITE_ATTR_BLKF, // Arrow Target (e.g. Big Eye in Dark Palace)
+    [0x39] = SPRITE_ATTR_BLKF, // Middle Aged Guy in the desert
     [0x3A] = 0, // Magic Powder Bat /The Lightning Bolt the bat hurls at you.
     [0x3B] = 0, // Dash Item / such as Book of Mudora, keys
-    [0x3C] = SPRITE_ATTR_BLOK, // Kid in village near the trough
-    [0x3D] = SPRITE_ATTR_BLOK, // Signs? Chicken lady also showed up / Scared ladies outside houses.
+    [0x3C] = SPRITE_ATTR_BLKF, // Kid in village near the trough
+    [0x3D] = SPRITE_ATTR_BLKS, // Signs? Chicken lady also showed up / Scared ladies outside houses.
     [0x3E] = SPRITE_ATTR_ENMY, // Rock Rupee Crabs
     [0x3F] = SPRITE_ATTR_ENMY, // Tutorial Soldiers from beginning of game
     
-    [0x40] = SPRITE_ATTR_ENMY | SPRITE_ATTR_BLOK, // Hyrule Castle Barrier to Agahnims Tower
+    [0x40] = SPRITE_ATTR_ENMY | SPRITE_ATTR_BLKF, // Hyrule Castle Barrier to Agahnims Tower
     [0x41] = SPRITE_ATTR_ENMY, // Soldier
     [0x42] = SPRITE_ATTR_ENMY, // Blue Soldier
     [0x43] = SPRITE_ATTR_ENMY, // Red Spear Soldier
@@ -477,7 +486,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x54] = SPRITE_ATTR_ENMY, // Lanmolas boss
     [0x55] = SPRITE_ATTR_ENMY, // Zora / Fireballs (including the blue Agahnim fireballs)
     [0x56] = SPRITE_ATTR_ENMY, // Walking Zora
-    [0x57] = SPRITE_ATTR_BLOK, // Desert Palace Barriers
+    [0x57] = SPRITE_ATTR_BLKF, // Desert Palace Barriers
     [0x58] = SPRITE_ATTR_ENMY, // Sandcrab
     [0x59] = SPRITE_ATTR_ENMY, // Birds (boids)
     [0x5A] = SPRITE_ATTR_ENMY, // Squirrels
@@ -488,15 +497,15 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x5F] = SPRITE_ATTR_ENMY, // Roller
     
     [0x60] = SPRITE_ATTR_ENMY, // Roller (horizontal moving)
-    [0x61] = SPRITE_ATTR_BLOK, // Statue Sentry
-    [0x62] = SPRITE_ATTR_BLOK, // Master Sword plus pendants and beams of light
+    [0x61] = SPRITE_ATTR_BLKF, // Statue Sentry
+    [0x62] = SPRITE_ATTR_BLKF, // Master Sword plus pendants and beams of light
     [0x63] = 0, // Sand Lion Pit
     [0x64] = SPRITE_ATTR_ENMY, // Sand Lion
     [0x65] = 0, // Shooting Gallery guy
-    [0x66] = SPRITE_ATTR_BLOK, // Moving cannon ball shooters
-    [0x67] = SPRITE_ATTR_BLOK, // Moving cannon ball shooters
-    [0x68] = SPRITE_ATTR_BLOK, // Moving cannon ball shooters
-    [0x69] = SPRITE_ATTR_BLOK, // Moving cannon ball shooters 
+    [0x66] = SPRITE_ATTR_BLKF, // Moving cannon ball shooters
+    [0x67] = SPRITE_ATTR_BLKF, // Moving cannon ball shooters
+    [0x68] = SPRITE_ATTR_BLKF, // Moving cannon ball shooters
+    [0x69] = SPRITE_ATTR_BLKF, // Moving cannon ball shooters 
     [0x6A] = SPRITE_ATTR_ENMY, // Ball N' Chain Trooper
     [0x6B] = SPRITE_ATTR_ENMY, // Cannon Ball Shooting Soldier (unused in original = WTF?)
     [0x6C] = 0, // Warp Vortex created by Magic Mirror
@@ -509,10 +518,10 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x72] = 0, // Activator for the ponds (where you throw in items)
     [0x73] = SPRITE_ATTR_SUBT, // Links Uncle / Sage / Barrier that opens in the sanctuary
     [0x74] = 0, // Red Hat Boy who runs from you
-    [0x75] = SPRITE_ATTR_TALK | SPRITE_ATTR_BLOK | SPRITE_ATTR_NODE, // Bottle Vendor
-    [0x76] = SPRITE_ATTR_FLLW | SPRITE_ATTR_BLOK, // Princess Zelda
+    [0x75] = SPRITE_ATTR_TALK | SPRITE_ATTR_BLKS, // Bottle Vendor
+    [0x76] = SPRITE_ATTR_FLLW, // Princess Zelda
     [0x77] = SPRITE_ATTR_ENMY, // Also Fire Faeries (seems like a different variety)
-    [0x78] = SPRITE_ATTR_BLOK, // Village Elder
+    [0x78] = SPRITE_ATTR_BLKS, // Village Elder
     [0x79] = 0, // Good bee / normal bee
     [0x7A] = SPRITE_ATTR_ENMY, // Agahnim
     [0x7B] = SPRITE_ATTR_ENMY, // Agahnim energy blasts (not the duds)
@@ -577,15 +586,15 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xB2] = 0, // Good bee again?
     [0xB3] = 0, // Hylian Inscription (near Desert Palace). Also near Master Sword
     [0xB4] = SPRITE_ATTR_FLLW, // Thiefs chest (not the one that follows you, the one that you grab from the DW smithy house)
-    [0xB5] = SPRITE_ATTR_BLOK | SPRITE_ATTR_TALK, // Bomb Salesman (elephant looking guy)
+    [0xB5] = SPRITE_ATTR_BLKF | SPRITE_ATTR_TALK, // Bomb Salesman (elephant looking guy)
     [0xB6] = SPRITE_ATTR_FLLW, // Kiki the monkey?
     [0xB7] = SPRITE_ATTR_FLLW, // Maiden following you in Blind Dungeon
     [0xB8] = 0, // Monologue Testing Sprite (Debug Artifact)
     [0xB9] = 0, // Feuding Friends on Death Mountain
     [0xBA] = 0, // Whirlpool
     // subtype2: 0x00 salesman; 0x0c bombs; 0x0a one heart; 0x07 red potion
-    [0xBB] = SPRITE_ATTR_BLOK | SPRITE_ATTR_TALK, // Salesman / chestgame guy / 300 rupee giver guy / Chest game thief / Item for sale
-    [0xBC] = SPRITE_ATTR_BLOK, // Drunk in the inn
+    [0xBB] = SPRITE_ATTR_BLKF | SPRITE_ATTR_TALK, // Salesman / chestgame guy / 300 rupee giver guy / Chest game thief / Item for sale
+    [0xBC] = SPRITE_ATTR_BLKF, // Drunk in the inn
     [0xBD] = SPRITE_ATTR_ENMY, // Vitreous (the large eyeball)
     [0xBE] = SPRITE_ATTR_ENMY, // Vitreous' smaller eyeballs
     [0xBF] = SPRITE_ATTR_ENMY, // Vitreous' lightning blast
@@ -612,7 +621,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xD2] = SPRITE_ATTR_ENMY, // Flopping fish
     [0xD3] = SPRITE_ATTR_ENMY, // Animated Skulls Creatures
     [0xD4] = SPRITE_ATTR_ENMY, // Landmines
-    [0xD5] = SPRITE_ATTR_BLOK | SPRITE_ATTR_TALK, // Digging Game Proprietor
+    [0xD5] = SPRITE_ATTR_BLKF | SPRITE_ATTR_TALK, // Digging Game Proprietor
     [0xD6] = SPRITE_ATTR_ENMY, // Ganon! OMG
     [0xD7] = SPRITE_ATTR_ENMY, // Copy of Ganon, except invincible?
     [0xD8] = SPRITE_ATTR_ITEM, // Heart refill
@@ -638,12 +647,12 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xEB] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Quarter Heart Container
     [0xEC] = 0, // Bushes or pot, picked up/thrown
     [0xED] = 0, // Cane of Somaria Platform
-    [0xEE] = SPRITE_ATTR_BLOK, // Movable Mantle (in Hyrule Castle)
+    [0xEE] = SPRITE_ATTR_BLKF, // Movable Mantle (in Hyrule Castle)
     [0xEF] = 0, // Cane of Somaria Platform (same as 0xED but this index is not used)
     
     [0xF0] = 0, // Cane of Somaria Platform (same as 0xED but this index is not used)
     [0xF1] = 0, // Cane of Somaria Platform (same as 0xED but this index is not used)
-    [0xF2] = SPRITE_ATTR_BLOK, // Medallion Tablet
+    [0xF2] = SPRITE_ATTR_BLKF, // Medallion Tablet
 };
 
 struct ap_sprite_subtype {
@@ -654,6 +663,8 @@ struct ap_sprite_subtype {
 
 static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
     { .type = 0x73, .subtype = 0x0100, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE }, // Link's Uncle
+    { .type = 0x73, .subtype = 0x0200, .attrs = SPRITE_ATTR_BLKF }, // Guy next to Zelda
+    { .type = 0x73, .subtype = 0x0000, .attrs = SPRITE_ATTR_BLKF }, // Barrier in Sanctuary
 };
 
 // module_index

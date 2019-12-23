@@ -49,9 +49,9 @@ ap_print_goals()
         printf("    " TERM_BOLD("*") " %s " PRIGOAL, score_str, PRIGOALF(goal));
         if (goal->type == GOAL_EXPLORE) {
             if (goal->node != NULL && goal->node->adjacent_node != NULL) {
-                printf(" to %s", goal->node->adjacent_node->name);
+                printf(" to %s %p", goal->node->adjacent_node->name, goal->node);
             } else {
-                printf(" to umapped");
+                printf(" to umapped %p", goal->node);
             }
         } else {
             if (goal->node != NULL && goal->node->screen != NULL) {
@@ -94,11 +94,17 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
     snprintf(goal->name, sizeof goal->name, PRIGOAL, PRIGOALF(goal));
     if (type == GOAL_EXPLORE) {
         LOG("New explore, attr: %#x", node->tile_attr);
+    } else if (type == GOAL_SCRIPT) {
+        if (goal->node->script->start_item == INVENTORY_BOMBS) {
+            ap_req_require(&goal->req, 0, REQUIREMENT_BOMBS);
+        }
     }
-    if (type != GOAL_EXPLORE && !(type == GOAL_NPC && node->sprite_type == 0x73 && node->sprite_subtype == 0x100)) {
-        // Don't do anything but explore until we get sword from uncle
-        ap_req_require(&goal->req, 0, REQUIREMENT_SWORD);
-    }
+    /*
+        if (!(type == GOAL_NPC && node->sprite_type == 0x73 && node->sprite_subtype == 0x100)) {
+            // Don't do anything but explore until we get sword from uncle
+            ap_req_require(&goal->req, 0, REQUIREMENT_SWORD);
+        }
+        */
     if (type == GOAL_EXPLORE && (ap_tile_attrs[node->tile_attr] & TILE_ATTR_SWIM)) {
         //ap_graph_add_prereq(&goal->graph, &item_goal_flippers->graph);
         ap_req_require(&goal->req, 0, REQUIREMENT_FLIPPERS);
@@ -139,7 +145,8 @@ ap_print_task(const struct ap_task * task)
     case TASK_TALK_NPC:
         buf += sprintf(buf, " [node=" PRINODE "]", PRINODEF(task->node));
         break;
-    case TASK_SCRIPT:
+    case TASK_SCRIPT_SEQUENCE:
+    case TASK_SCRIPT_KILLALL:
         buf += sprintf(buf, " [script=%s start_tl=" PRIXYV "]", task->node->script->name, PRIXYVF(task->node->script->start_tl));
         break;
     case TASK_SET_INVENTORY:
@@ -194,12 +201,12 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         if (submodule_index == 0x01) {
             // Inventory
             if (task->type != TASK_SET_INVENTORY) {
-                JOYPAD_MASH(START);
+                JOYPAD_MASH(START, 0x01);
             }
         } else {
             // Dialog?
             LOGB("Mashing dialog; submodule = %#x", submodule_index);
-            JOYPAD_MASH(A);
+            JOYPAD_MASH(A, 0x01);
         }
     }
 
@@ -245,7 +252,8 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                 JOYPAD_SET(A);
                 task->state = 2;
             }
-            return ap_follow_targets(joypad);
+            rc = ap_follow_targets(joypad);
+            if (rc != RC_INPR) return rc;
         }
         break;
     case TASK_OPEN_CHEST:
@@ -308,7 +316,8 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         case 2:
             if (task->state == 1) { JOYPAD_SET(A); task->state = 2; }
             else { JOYPAD_CLEAR(A); task->state = 1; }
-            return ap_follow_targets(joypad);
+            rc = ap_follow_targets(joypad);
+            if (rc != RC_INPR) return rc;
         }
         break;
     case TASK_TRANSITION:
@@ -370,7 +379,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             }
         }
         break;
-    case TASK_SCRIPT:
+    case TASK_SCRIPT_SEQUENCE:
         switch (task->state) {
         case 0:
             rc = ap_set_script(task->node->script);
@@ -378,8 +387,41 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->timeout = rc + 32;
             task->state++;
         case 1:
-            return ap_follow_targets(joypad);
+            rc = ap_follow_targets(joypad);
+            if (rc != RC_INPR) return rc;
         }
+        break;
+    case TASK_SCRIPT_KILLALL:
+        if (task->state == -100 && task->timeout == 1) {
+            return RC_DONE;
+        }
+        if (task->state == 0 || task->timeout == 1) {
+            size_t target = -1;
+            for (size_t i = 0; i < 16; i++) {
+                if (!ap_sprites[i].active)
+                    continue;
+                if (!XYIN(ap_sprites[i].tl, screen->tl, screen->br))
+                    continue;
+                target = i;
+                LOGB("Targeting sprite #%zu", target);
+                break;
+            }
+            if (target == (size_t)-1) {
+                // Almost done; wait ~120 frames for loot to drop
+                task->state = -100;
+                task->timeout = 128;
+                break;
+            }
+            rc = ap_pathfind_sprite(target);
+            if (rc == RC_FAIL) return RC_FAIL;
+            task->timeout = MIN(20, MAX(8, rc));
+            task->state++;
+        } 
+        if (task->state == 2000) { // Actual timeout
+            return RC_FAIL;
+        }
+        rc = ap_follow_targets(joypad);
+        if (rc == RC_FAIL) return RC_FAIL;
         break;
     case TASK_NONE:
     default:
@@ -454,7 +496,9 @@ ap_goal_score(struct ap_goal * goal, int max_score)
     case GOAL_SCRIPT:
         break;
     case GOAL_EXPLORE:
-        score += 100000;
+        if (goal->node->screen->name[0] != 'H') {
+            score += 100000;
+        }
         //if (goal->node->type != NODE_SWITCH)
             //score += 1000;
         if (goal->node->adjacent_node != NULL) {
@@ -661,8 +705,13 @@ retry_new_goal:;
             snprintf(task->name, sizeof task->name, "start item: %s", ap_inventory_names[item]);
         }
         task = ap_task_append();
-        task->type = TASK_SCRIPT;
         task->node = min_goal->node;
+        if (task->node->script->type == SCRIPT_SEQUENCE) {
+            task->type = TASK_SCRIPT_SEQUENCE;
+        } else {
+            assert(task->node->script->type == SCRIPT_KILLALL);
+            task->type = TASK_SCRIPT_KILLALL;
+        }
         snprintf(task->name, sizeof task->name, "script");
         break;
     default:

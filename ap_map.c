@@ -36,6 +36,7 @@ static const struct ap_script ap_scripts[] = {
         .start_tl = XY(0x9af8, 0x21c0),
         .start_item = -1,
         .sequence = "^^<^v>>^<^",
+        .type = SCRIPT_SEQUENCE,
         .name = "Dam Chest Block Puzzle",
     },
     {
@@ -43,14 +44,59 @@ static const struct ap_script ap_scripts[] = {
         .start_tl = XY(0xaaf0, 0x2340),
         .start_item = INVENTORY_BOMBS,
         .sequence = "Yvvv>v<vv^^>>>vv<UA>^^<<<^<<vvv>vv>>>>>",
+        .type = SCRIPT_SEQUENCE,
         .name = "Blind's House Block Puzzle",
+    },
+    {
+        .start_tl = XY(0x0988, 0x0c80),
+        .start_item = INVENTORY_BOMBS,
+        .sequence = "Yvvvvvvvvvvv",
+        .type = SCRIPT_SEQUENCE,
+        .name = "Bomb wall below Link's House",
+    },
+    {
+        .start_tl = XY(0x0068, 0x0990),
+        .start_item = INVENTORY_BOMBS,
+        .sequence = "Y>>><<<>>><<<>>><<<>>>",
+        .type = SCRIPT_SEQUENCE,
+        .name = "Bombable Hut in Kak",
+    },
+    {
+        .start_tl = XY(0x52f8, 0x0e60),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLALL,
+        .name = "HC kill guard for key",
+    },
+    {
+        .start_tl = XY(0x4878, 0x0fb0),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLALL,
+        .name = "HC kill green guard for doors",
+    },
+    {
+        .start_tl = XY(0x4950, 0x0f80),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLALL,
+        .name = "HC kill blue guard for door",
+    },
+    {
+        .start_tl = XY(0x4250, 0x1060),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLALL,
+        .name = "HC kill miniboss free Zelda",
     },
 };
 
+static bool add_explore_goals_global = true;
 static const struct ap_screen_info {
     uint16_t id;
     char name[40];
     bool add_explore_goals;
+    bool key_doors;
 } ap_screen_infos[] = {
     // Light Overworld
     { .id = 0x0402, .name = "North of Kak", },
@@ -82,6 +128,10 @@ static const struct ap_screen_info {
     { .id = 0x22a8, .name = "Blind's Storage",},
     // Hyrule Castle
     { .id = 0x0c48, .name = "HC Entrance", },
+    { .id = 0x0e50, .name = "HC First Key", .key_doors = true, .add_explore_goals = true},
+    { .id = 0x0f50, .name = "HC Walkway"},
+    { .id = 0x0f48, .name = "HC Green Guard"},
+    { .id = 0x1040, .name = "HC Zelda Jail"},
     // Eastern Palace
     { .id = 0x1988, .name = "EP Entrance", },
     { .id = 0x1888, .name = "EP Hall 1", },
@@ -95,8 +145,26 @@ static const struct ap_screen_info {
     { .id = -1 },
 };
 
+
+struct point_state {
+    // Parts that need to be cleared each time this ap_pathfind_local is called
+    struct point_state * from;
+    uint32_t gscore;
+    uint32_t fscore;
+
+    // Parts that can be cached for the same (screen, frame #)
+    struct xy xy;
+    uint16_t tile_attrs;
+    uint8_t raw_tile;
+    uint8_t ledge;
+    uint8_t corner;
+    uint32_t cost;
+};
+
 static int
 ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy destination_tl, struct xy destination_br, bool commit);
+static void
+ap_print_pathfind_local_state(struct point_state *buf, struct xy grid);
 
 static struct xy
 ap_box_edge(struct xy tl, struct xy br, int dir) {
@@ -619,12 +687,12 @@ ap_follow_targets(uint16_t * joypad)
         if (!*ap_ram.inventory_sword) {
             break;
         }
-        if (ap_sprites[i].type == 0 || (ap_sprites[i].state == 0 && ap_sprites[i].subtype == 0)) {
+        if (!ap_sprites[i].active) {
             continue;
         }
         if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY) {
-            if (XYL1BOXDIST(link, ap_sprites[i].tl, ap_sprites[i].br) < 16) {
-                JOYPAD_MASH(B); // Sword
+            if (XYL1BOXDIST(link, ap_sprites[i].tl, ap_sprites[i].br) < 6) {
+                JOYPAD_MASH(B, 0x10); // Sword
                 break;
             }
         }
@@ -734,21 +802,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
     }
     */
 
-    struct point_state;
-    static struct point_state {
-        // Parts that need to be cleared each time this function is called
-        struct point_state * from;
-        uint32_t gscore;
-        uint32_t fscore;
-
-        // Parts that can be cached for the same (screen, frame #)
-        struct xy xy;
-        uint16_t tile_attrs;
-        uint8_t raw_tile;
-        uint8_t ledge;
-        uint8_t corner;
-        uint32_t cost;
-    } buf[0x82 * 0x82]; 
+    static struct point_state buf[0x82 * 0x82]; 
 
     // CORNER is used to identify boundaries of 2x2 tiles (like bushes)
     enum corner {
@@ -877,7 +931,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                     }
                 }
             }
-            if ((ap_sprites[i].attrs & SPRITE_ATTR_BLOK) &&
+            if ((ap_sprites[i].attrs & (SPRITE_ATTR_BLKF | SPRITE_ATTR_BLKS)) &&
                 ap_sprites[i].state != 0x0A && // carried
                 ap_sprites[i].state != 0x06) { // thrown
                 assert_bp(ap_sprites[i].state == 0x08 || 
@@ -885,16 +939,20 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                         ap_sprites[i].state == 0x00);
                 //volatile struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
                 //assert_bp(i != 11);
-                struct xy center = XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl);
-                center = XYOP1(center, / 8);
+                struct xy hb_tl = XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl);
+                struct xy hb_br= XYOP2(ap_sprites[i].hitbox_br, -, screen->tl);
+                hb_tl = XYOP1(hb_tl, / 8);
+                hb_br = XYOP1(hb_br, / 8);
+                hb_tl = XYOP1(hb_tl, -1);
+                hb_br = XYOP1(hb_br, +1);
                 /*
                 if (i == 11) {
                     LOG(TERM_BOLD("11:") " " PRIXYV, PRIXYVF(center));
                 }
                 */
-                for (int dx = -2; dx < 4; dx++) {
-                    for (int dy = -2; dy < 4; dy++) {
-                        struct xy ds = XYOP2(center, +, XY(dx, dy));
+                struct xy ds;
+                for (ds.x = hb_tl.x; ds.x <= hb_br.x; ds.x++) {
+                    for (ds.y = hb_tl.y; ds.y <= hb_br.y; ds.y++) {
                         if (!XYUNDER(ds, grid)) {
                             continue;
                         }
@@ -917,6 +975,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
         src.y += 1;
         if (commit) LOG("Nudged Y start");
     }
+    //ap_print_pathfind_local_state(buf, grid);
 
     static struct pq * pq = NULL;
     if (pq == NULL) {
@@ -1118,6 +1177,7 @@ ap_pathfind_node_distance(const struct ap_node * src, const struct ap_node * dst
         return ap_pathfind_local(src->screen, src->tl, dst->tl, dst->br, false);
     }
     assert(dst->type != NODE_NONE);
+    assert_bp(src->screen->distances_length > 0);
     const struct ap_node_distance *dists = src->screen->distances;
     for (size_t i = 0; i < src->screen->distances_length; i++) {
         if (dists[i].src == src && dists[i].dst == dst) {
@@ -1331,6 +1391,44 @@ ap_print_map_graph()
     LOG("Exported map graph to full_map.dot");
 }
 
+static void
+ap_print_pathfind_local_state(struct point_state *buf, struct xy grid) {
+    struct point_state (*state)[grid.x + 2] = (void *) &buf[0x83];
+    struct xy link = ap_link_xy();
+    link = XYOP1(link, & 0xFFF8);
+
+    FILE * mapf = fopen("local_cost.pgm.tmp", "w");
+    fprintf(mapf, "P6 %u %u %u\n", grid.x, grid.y, 255);
+    for (uint16_t y = 0; y < grid.y; y++) {
+        for (uint16_t x = 0; x < grid.x; x++) {
+            uint32_t cost = state[y][x].cost;
+            uint8_t c = 0;
+            if (cost >= (1 << 20)) {
+                c = 0;
+            } else if (cost >= 10000) {
+                c = 25;
+            } else if (cost >= 1000) {
+                c = 40;
+            } else if (cost > 200) {
+                c = 50;
+            } else {
+                c = 255 - cost;
+            }
+            if (XYEQ(state[y][x].xy, link)) {
+                fputc(0, mapf);
+                fputc(255, mapf);
+                fputc(c, mapf);
+            } else {
+                fputc(c, mapf);
+                fputc(c, mapf);
+                fputc(c, mapf);
+            }
+        }
+    }
+    fclose(mapf);
+    rename("local_cost.pgm.tmp", "local_cost.pgm");
+}
+
 void
 ap_print_map_full()
 {
@@ -1481,6 +1579,16 @@ ap_pathfind_node(struct ap_node * node, bool commit, int max_distance)
     return ap_pathfind_global(link, node, commit, max_distance);
 }
 
+int
+ap_pathfind_sprite(size_t sprite_idx)
+{
+    struct xy link = ap_link_xy();
+    struct ap_screen * screen = map_screens[XYMAPSCREEN(link)];
+    assert(screen != NULL);
+    assert_bp(XYIN(ap_sprites[sprite_idx].tl, screen->tl, screen->br));
+    return ap_pathfind_local(screen, link, ap_sprites[sprite_idx].tl, ap_sprites[sprite_idx].br, true);
+}
+
 static void
 array_reverse(void *array_base, size_t item_size, size_t array_len) {
     uint8_t buf[item_size];
@@ -1507,6 +1615,8 @@ array_reverse_test() {
 int
 ap_set_script(const struct ap_script * script) {
     LOG("Setting script: %s", script->name);
+    assert(script->type == SCRIPT_SEQUENCE);
+    assert(script->sequence != NULL);
     struct xy xy = script->start_tl;
     size_t i = 0;
     uint16_t dir_mask = SNES_MASK(UP) | SNES_MASK(DOWN) | SNES_MASK(LEFT) | SNES_MASK(RIGHT);
@@ -1604,7 +1714,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
     // Add goals
     switch (new_node->type) {
     case NODE_TRANSITION:
-        if ((screen->info != NULL && screen->info->add_explore_goals)) {
+        if (add_explore_goals_global || (screen->info != NULL && screen->info->add_explore_goals)) {
             if (new_node->adjacent_node == NULL && new_node->adjacent_direction != 0)
                 new_node->goal = ap_goal_add(GOAL_EXPLORE, new_node);
         }
@@ -1622,7 +1732,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
         if (ap_sprite_attrs_for_type(new_node->sprite_type, new_node->sprite_subtype) & SPRITE_ATTR_TALK) {
             new_node->goal = ap_goal_add(GOAL_NPC, new_node);
         } else if (ap_sprite_attrs_for_type(new_node->sprite_type, new_node->sprite_subtype) & SPRITE_ATTR_ITEM)  {
-            //ap_goal_add(GOAL_EXPLORE, new_node);
+            ap_goal_add(GOAL_PICKUP, new_node);
         }
         break;
     case NODE_SCRIPT:
@@ -1665,6 +1775,8 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
         new_node->_debug_blocked = true;
     } else if (strcmp(new_node->name, "0x148A L 4 l") == 0) {
         new_node->_debug_blocked = true;
+    } else if (new_node->screen->id == 0x0e50 && strcmp(new_node->name, "stairs U 0x5e") == 0) {
+        new_node->_debug_blocked = true;
     } else if (new_node->screen->id == 0x0c0a && strncmp(new_node->name, "door", 4) == 0) {
         new_node->_debug_blocked = true;
     } else if (new_node->screen->id == 0x0402 && strncmp(new_node->name, "door", 4) == 0) {
@@ -1691,17 +1803,25 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
         if (node->adjacent_direction != new_node->adjacent_direction)
             continue;
         if (node->type != NODE_SPRITE) {
-            if (!XYIN(new_node->tl, node->tl, node->br) || !XYIN(new_node->br, node->tl, node->br))
+            if (XYEQ(node->tl, new_node->tl) && XYEQ(node->br, new_node->br)) {
+                //assert_bp(node->tile_attr == new_node->tile_attr);
+            } else if (XYIN(new_node->tl, node->tl, node->br) && XYIN(new_node->br, node->tl, node->br)) {
+                //assert(node->adjacent_screen == new_node->adjacent_screen);
+                // XXX This has a lot of false positives
+                //assert_bp(node->tile_attr == new_node->tile_attr);
+
+                //LOG("duplicate node %s == %s", node->name, new_node->name);
+
+                // Merge in new information???
+                LOGB("node tl/br would shrink: before: " PRIBBV " after: " PRIBBV, PRIBBVF(*node), PRIBBVF(*new_node));
+                new_node->tl = node->tl;
+                new_node->br = node->br;
+            } else if (node->type == NODE_TRANSITION && XYIN(node->tl, new_node->tl, new_node->br) && XYIN(node->br, new_node->tl, new_node->br)) {
+                //assert_bp(node->tile_attr == new_node->tile_attr);
+                LOGB("node tl/br grew: before: " PRIBBV " after: " PRIBBV, PRIBBVF(*node), PRIBBVF(*new_node));
+            } else {
                 continue;
-            //assert(node->adjacent_screen == new_node->adjacent_screen);
-            // XXX This has a lot of false positives
-            assert_bp(node->tile_attr == new_node->tile_attr);
-
-            //LOG("duplicate node %s == %s", node->name, new_node->name);
-
-            // Merge in new information???
-            if (!XYEQ(node->tl, new_node->tl) || !XYEQ(node->br, new_node->br))
-                LOG("node tl/br changed: before: " PRIBBV " after: " PRIBBV, PRIBBVF(*node), PRIBBVF(*new_node));
+            }
         }
 
         node->tl = new_node->tl;
@@ -1895,6 +2015,7 @@ ap_update_map_screen(bool force)
             ap_screen_refresh_cache(screen);
             ap_map_add_nodes_to_screen(screen);
             ap_map_add_scripts_to_screen(screen);
+            ap_map_screen_update_distances(screen);
         }
         screen = map_screens[index];
     } else {
@@ -1907,14 +2028,15 @@ ap_update_map_screen(bool force)
     //ap_graph_mark_done(&screen->graph);
     ap_sprites_print();
     ap_print_map_screen(screen);
+    // TODO: Skip this if link is not yet on the screen
     printf("Nodes: [(un)Reachable? (un)Adjacent?] (tl x br) type \"name\"\n");
 
     int i = 0; 
     for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
         bool reachable = ap_pathfind_local(screen, ap_link_xy(), node->tl, node->br, false) >= 0;
         node->_reachable = reachable;
-        printf("   %d. [%c%c] (" PRIXY " x " PRIXY ") %s \"%s\"\n",
-                i++, "uR"[reachable], "uA"[node->adjacent_node != NULL], PRIXYF(node->tl), PRIXYF(node->br), ap_node_type_names[node->type], node->name);
+        printf("   %d. %p [%c%c] (" PRIXY " x " PRIXY ") %s \"%s\"\n",
+                i++, node, "uR"[reachable], "uA"[node->adjacent_node != NULL], PRIXYF(node->tl), PRIXYF(node->br), ap_node_type_names[node->type], node->name);
 
     }
 
@@ -1936,6 +2058,37 @@ static void ap_map_add_scripts_to_screen(struct ap_screen * screen) {
         snprintf(new_node->name, sizeof new_node->name, "Script: %s", script->name);
 
         ap_screen_add_raw_node(screen, new_node);
+    }
+}
+
+static void
+ap_map_add_sprite_nodes_to_screen(struct ap_screen * screen) {
+    static struct ap_node * new_node = NULL;
+    if (new_node == NULL)
+        new_node = NONNULL(calloc(1, sizeof *new_node));
+
+    for (size_t i = 0; i < 16; i++) {
+        if (ap_sprites[i].type == 0)
+            continue;
+        if (ap_sprites[i].attrs & SPRITE_ATTR_NODE) {
+            new_node->tl = ap_sprites[i].tl;
+            if (!XYIN(new_node->tl, screen->tl, screen->br)) {
+                LOG("Sprite %zu out of screen", i);
+            } else {
+                new_node->type = NODE_SPRITE;
+                new_node->br = ap_sprites[i].br;
+                new_node->sprite_type = ap_sprites[i].type;
+                new_node->sprite_subtype = ap_sprites[i].subtype;
+                /*
+                if (ap_sprites[i].attrs & SPRITE_ATTR_TALK) {
+                    new_node->tl = XYOP2(ap_sprites[i].hitbox_tl, +, XY(0, 16));
+                    new_node->br = XYOP2(ap_sprites[i].hitbox_tl, +, XY(15, 31));
+                }
+                */
+                snprintf(new_node->name, sizeof new_node->name, "sprite %#x.%#x %s", new_node->sprite_type, new_node->sprite_subtype, ap_sprite_attr_name(ap_sprites[i].attrs));
+                ap_screen_commit_node(screen, &new_node);
+            }
+        }
     }
 }
 
@@ -1976,7 +2129,9 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
         for (struct xy xy = xy_init[k]; XYIN(xy, tl, br); xy = XYOP2(xy, +, XYOP1(xy_step[k], * 8))) {
             for (; XYIN(xy, tl, br); xy = XYOP2(xy, +, XYOP1(xy_step[k], * 8))) {
                 bool can_walk = true;
-                if (XYINDOORS(xy) && (ap_map_attr(xy) == 0x00 || ap_map_attr(xy) == 0x1c)) {
+                //if (XYINDOORS(xy) && (ap_map_attr(xy) == 0x00 || ap_map_attr(xy) == 0x1c)) {
+                if (XYINDOORS(xy) && (ap_map_attr(xy) == 0x1c)) {
+                    // NOTE: sometimes 0's are actually walkable
                     // inside, border 0 or 1c is just empty
                     // you could walk there, but you definitely can't get there
                     can_walk = false;
@@ -2197,6 +2352,27 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                     new_node->br = XYOP2(new_node->br, +, offset);
                 }
                 snprintf(new_node->name, sizeof new_node->name, "stairs %c 0x%02x", new_node->adjacent_direction == DIR_U ? 'U' : 'D', attr);
+            } else if (ap_tile_attrs[attr] & TILE_ATTR_DOOR) {
+                new_node->type = NODE_TRANSITION;
+                struct xy screen_center = XYMID(screen->tl, screen->br);
+                struct xy node_center = XYMID(new_node->tl, new_node->br);
+                int dx = (int) node_center.x - (int) screen_center.x;
+                int dy = (int) node_center.y - (int) screen_center.y;
+                if (dx > 32) {
+                    new_node->adjacent_direction = DIR_R;
+                    assert_bp(ABS(dy) < 32);
+                } else if (dx < -32) {
+                    new_node->adjacent_direction = DIR_L;
+                    assert_bp(ABS(dy) < 32);
+                } else if (dy > 32) {
+                    new_node->adjacent_direction = DIR_D;
+                } else if (dy < -32) {
+                    new_node->adjacent_direction = DIR_U;
+                } else {
+                    new_node->adjacent_direction = DIR_D;
+                    assert_bp(false);
+                }
+                snprintf(new_node->name, sizeof new_node->name, "door %s 0x%02x %s", dir_names[new_node->adjacent_direction], attr, attr_name);
             } else if (ap_tile_attrs[attr] & TILE_ATTR_CHST) {
                 new_node->type = NODE_CHEST;
                 // Chests are opened from the bottom
@@ -2228,30 +2404,6 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
         }
     }
 
-    for (size_t i = 0; i < 16; i++) {
-        if (ap_sprites[i].type == 0)
-            continue;
-        if (ap_sprites[i].attrs & SPRITE_ATTR_NODE) {
-            new_node->tl = ap_sprites[i].tl;
-            if (!XYIN(new_node->tl, screen->tl, screen->br)) {
-                LOG("Sprite %zu out of screen", i);
-            } else {
-                new_node->type = NODE_SPRITE;
-                new_node->br = ap_sprites[i].br;
-                new_node->sprite_type = ap_sprites[i].type;
-                new_node->sprite_subtype = ap_sprites[i].subtype;
-                /*
-                if (ap_sprites[i].attrs & SPRITE_ATTR_TALK) {
-                    new_node->tl = XYOP2(ap_sprites[i].hitbox_tl, +, XY(0, 16));
-                    new_node->br = XYOP2(ap_sprites[i].hitbox_tl, +, XY(15, 31));
-                }
-                */
-                snprintf(new_node->name, sizeof new_node->name, "sprite %#x.%#x %s", new_node->sprite_type, new_node->sprite_subtype, ap_sprite_attr_name(ap_sprites[i].attrs));
-                ap_screen_commit_node(screen, &new_node);
-                new_node_count++;
-            }
-        }
-    }
 }
 
 int
@@ -2316,6 +2468,11 @@ ap_node_islocked(struct ap_node * node) {
     if (ap_update_map_screen(false) != node->screen)
         return false;
     if (!*ap_ram.room_trap_doors) return false;
+    if (node->screen->info != NULL) {
+        if (node->screen->info->key_doors && *ap_ram.dungeon_current_keys > 0) {
+            return false;
+        }
+    }
 
     uint8_t tile_attr_tl = ap_map_attr(node->tl);
     uint8_t tile_attr_br = ap_map_attr(node->br);
@@ -2465,5 +2622,13 @@ ap_map_import(const char * filename) {
             if (screen == NULL || !XYEQ(screen->tl, xy)) continue;
             ap_map_screen_update_distances(screen);
         }
+    }
+}
+
+void
+ap_map_tick() {
+    struct ap_screen * screen = ap_update_map_screen(false);
+    if (ap_sprites_changed) {
+        ap_map_add_sprite_nodes_to_screen(screen);
     }
 }

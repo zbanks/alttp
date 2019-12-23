@@ -49,6 +49,10 @@ void ap_req_update() {
     if (*ap_ram.inventory_sword > 1) {
         reqmask_set(&current_reqmask, REQUIREMENT_MASTER_SWORD);
     }
+    if (*ap_ram.dungeon_current_keys> 0) {
+        // XXX how to handle this across dungeons
+        reqmask_set(&current_reqmask, REQUIREMENT_KEY);
+    }
 }
 
 void ap_req_init(struct ap_req * req) {

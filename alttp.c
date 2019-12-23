@@ -6,8 +6,11 @@
 #include "ap_plan.h"
 #include "ap_req.h"
 
+static volatile bool manual_mode = false;
+
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
+
     assert_bp(frame == 0 || frame == ap_frame + 1);
     ap_frame = frame;
 
@@ -24,7 +27,8 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     static bool has_imported = false;
     if (!has_imported) {
         LOG("importing");
-        ap_map_import("map_state.5.00019532.txt");
+        //ap_map_import("map_state.5.00019532.txt");
+        //ap_map_import("map_state.7.00021016.txt");
         has_imported = true;
     } else if (frame == 100 && false) {
         ap_map_export("map_state_reflect.txt");
@@ -37,6 +41,10 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         ap_print_map_screen(NULL);
         //ap_print_goals();
         //exit(0);
+    }
+
+    if (manual_mode) {
+        return;
     }
 
     if (JOYPAD_EVENT(Y)) {
@@ -64,6 +72,10 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     case 0x07:
     case 0x09:
     case 0x0B:
+        if (submodule_index == 0x08) {
+            // Stairs; keep following targets (even though we can't change direction);
+            ap_follow_targets(joypad);
+        }
         if (submodule_index != 0x00 && submodule_index != 0x10) return;
         break;
         //if (frame % 2) JOYPAD_SET(START);
@@ -106,11 +118,9 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     */
 
     ap_debug = JOYPAD_TEST(START);
-    struct ap_screen * screen = ap_update_map_screen(false);
+    ap_map_tick();
     if (*ap_ram.link_state != LINK_STATE_GROUND) {
-        //LOG("Link state: %#x", *ap_ram.link_state);
     } else {
-        //LOG("touching_chest: %d", *ap_ram.touching_chest)g;
         if (!JOYPAD_TEST(Y)) {
             ap_plan_evaluate(joypad);
         }
@@ -125,14 +135,14 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     //INFO("%u L:" PRIXY " M: " PRIXY "," PRIXY " m %u", *ap_ram.dungeon_room, PRIXYF(ap_link_xy()), PRIXYF(topleft), PRIXYF(bottomright), XYMAPSCREEN(topleft));
 
     static uint16_t x = 0;
-    if (x++ == 4000) {
+    if (x++ == 4000 && false) {
         ap_print_map_full();
         //ap_graph_print();
         char reqs[4096];
         ap_req_print(NULL, reqs);
         LOGB("Current requirements satisfied: %s", reqs);
         char filename[128];
-        snprintf(filename, sizeof filename, "map_state.6.%08u.txt", frame);
+        snprintf(filename, sizeof filename, "map_state.8.%08u.txt", frame);
         ap_map_export(filename);
         x = 0;
     }
