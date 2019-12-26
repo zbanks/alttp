@@ -30,6 +30,14 @@ static const uint8_t dir_opp[10] = {
     [DIR_LU] = DIR_RD, [DIR_RD] = DIR_LU,
     [DIR_RU] = DIR_LD, [DIR_LD] = DIR_RU,
 };
+static const uint8_t dir_cw[10] = {
+    [DIR_U] = DIR_R, [DIR_D] = DIR_L,
+    [DIR_L] = DIR_U, [DIR_R] = DIR_D,
+};
+static const uint8_t dir_ccw[10] = {
+    [DIR_U] = DIR_L, [DIR_D] = DIR_R,
+    [DIR_L] = DIR_D, [DIR_R] = DIR_D,
+};
 
 static const char * const dir_names[10] = {
     [0] = "0",

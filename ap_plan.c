@@ -98,6 +98,9 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
         if (goal->node->script->start_item == INVENTORY_BOMBS) {
             ap_req_require(&goal->req, 0, REQUIREMENT_BOMBS);
         }
+        if (goal->node->script->type == SCRIPT_KILLALL) {
+            ap_req_require(&goal->req, 0, REQUIREMENT_SWORD);
+        }
     }
     /*
         if (!(type == GOAL_NPC && node->sprite_type == 0x73 && node->sprite_subtype == 0x100)) {
@@ -496,9 +499,9 @@ ap_goal_score(struct ap_goal * goal, int max_score)
     case GOAL_SCRIPT:
         break;
     case GOAL_EXPLORE:
-        if (goal->node->screen->name[0] != 'H') {
-            score += 100000;
-        }
+        //if (goal->node->screen->name[0] != 'H') {
+        //    score += 100000;
+        //}
         //if (goal->node->type != NODE_SWITCH)
             //score += 1000;
         if (goal->node->adjacent_node != NULL) {
@@ -612,9 +615,11 @@ retry_new_goal:;
     }
     ap_active_goal = min_goal;
     if (min_goal == NULL) {
-        ap_new_goals = false;
+        //ap_new_goals = false;
+        ap_manual_mode = true;
         ap_print_map_full();
-        assert_bp(false);
+        LOGB("No goals available; falling back to manual mode");
+        //assert_bp(false);
         return;
     }
 

@@ -7,6 +7,7 @@
 uint64_t ap_frame = 0;
 struct ap_ram ap_ram;
 struct ap_snes9x * ap_emu = NULL;
+bool ap_manual_mode = false;
 
 char ap_info_string[INFO_STRING_SIZE];
 bool ap_debug;
@@ -66,7 +67,8 @@ AP_RAM_LIST
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
     //ap_emu->load("home");
-    ap_emu->load("basement");
+    ap_emu->load("stair_test");
+    //ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
     //ap_emu->load("blinds_house");
 
@@ -98,6 +100,9 @@ ap_sprites_update() {
         if (ap_ram.sprite_type[i] != sprite->type) {
             ap_sprites_changed = true;
         }
+    }
+    if (ap_sprites_changed) {
+        //LOGB("Sprites changed");
     }
 
     memset(ap_sprites, 0, sizeof ap_sprites);
@@ -155,7 +160,7 @@ ap_sprites_update() {
         if (*ap_ram.in_building) {
             sprite->hitbox_tl.x = ((sprite->hitbox_tl.x & ~0x1FF) << 2) | (sprite->hitbox_tl.x & 0x1FF);
             sprite->hitbox_tl.x += 0x4000;
-            if (!*ap_ram.sprite_lower_level && ap_ram.sprite_type[i] != 0x50) {
+            if (!ap_ram.sprite_lower_level[i] && ap_ram.sprite_type[i] != 0x50) {
                 sprite->hitbox_tl.x += 0x200;
             }
         }

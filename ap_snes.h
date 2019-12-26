@@ -33,6 +33,8 @@
     } \
     _ret; })
 
+bool ap_manual_mode;
+
 #define AP_RAM_LIST \
     X(module_index,         uint8_t,   0x7E0010)   \
     X(submodule_index,      uint8_t,   0x7E0011)   \
@@ -457,7 +459,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x39] = SPRITE_ATTR_BLKF, // Middle Aged Guy in the desert
     [0x3A] = 0, // Magic Powder Bat /The Lightning Bolt the bat hurls at you.
     [0x3B] = 0, // Dash Item / such as Book of Mudora, keys
-    [0x3C] = SPRITE_ATTR_BLKF, // Kid in village near the trough
+    [0x3C] = SPRITE_ATTR_BLKS, // Kid in village near the trough
     [0x3D] = SPRITE_ATTR_BLKS, // Signs? Chicken lady also showed up / Scared ladies outside houses.
     [0x3E] = SPRITE_ATTR_ENMY, // Rock Rupee Crabs
     [0x3F] = SPRITE_ATTR_ENMY, // Tutorial Soldiers from beginning of game

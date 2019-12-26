@@ -6,8 +6,6 @@
 #include "ap_plan.h"
 #include "ap_req.h"
 
-static volatile bool manual_mode = false;
-
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
 
@@ -18,7 +16,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     ap_sprites_update();
 
     // Cheating!
-    *(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;
+    //*(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;
     *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
     *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
 
@@ -43,7 +41,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         //exit(0);
     }
 
-    if (manual_mode) {
+    if (ap_manual_mode) {
         return;
     }
 
@@ -76,7 +74,9 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
             // Stairs; keep following targets (even though we can't change direction);
             ap_follow_targets(joypad);
         }
-        if (submodule_index != 0x00 && submodule_index != 0x10) return;
+        if (submodule_index != 0x00) {
+            return;
+        }
         break;
         //if (frame % 2) JOYPAD_SET(START);
         // fallthrough
