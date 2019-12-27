@@ -181,7 +181,7 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x10] = 0, // edge of ledge?
     [0x1c] = TILE_ATTR_WALK, // open below?
     // XXX how do these work; how are they different than 0x3X
-    [0x1d] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
+    [0x1d] = TILE_ATTR_WALK, // stairs?
     [0x1e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
     [0x1f] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
 

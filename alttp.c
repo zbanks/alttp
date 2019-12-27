@@ -20,12 +20,15 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     //*(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;
     *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
     *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
+    //*(uint8_t *) (uintptr_t) ap_ram.inventory_gloves = 1;
+    *(uint8_t *) (uintptr_t) &ap_ram.inventory_base[0x0b] = 1;
 
     ap_req_update();
 
     static bool has_imported = false;
     if (!has_imported) {
         LOG("importing");
+        ap_map_import("map.8.txt");
         //ap_map_import("map_state.5.00019532.txt");
         //ap_map_import("map_state.7.00021016.txt");
         has_imported = true;

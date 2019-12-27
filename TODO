@@ -1,5 +1,4 @@
-* With diagonal movement, need to check the corners
-    - Punted by removing diagonal movement
+* DONE: With diagonal movement, need to check the corners
 * Mark how to open doors in rooms (e.g. defeat all enemies)
     - Temporary workaround: SCRIPT_KILLALL
     - Future: add TASK_KILLALL
@@ -16,7 +15,10 @@
 * Invalidate screen distance cache when items are acquired (e.g. flippers, lift)
 * Figure out how keys should work with the ap_req system
     - How to encode which doors need keys?
-* Prune "clearly invalid" unreachable, walkable edges on screens
+* DONE: Prune "clearly invalid" unreachable, walkable edges on screens
     - May not be important once the whole map exists
 * Avoid bomb explosions
 * Indoor overlays
+* Re-enable jumping down ledges in the overworld
+    - Fix ledge zones
+    - Need to jump down ledge to get through dark cave to death mountain

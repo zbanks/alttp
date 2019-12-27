@@ -11,6 +11,7 @@ static struct ap_screen * map_screens[0x100 * 0x100];
 static bool map_screen_mask_x[0x100];
 static bool map_screen_mask_y[0x100];
 static size_t last_map_index = -1;
+static volatile const struct ap_screen * last_screen = NULL;
 
 static struct ap_target {
     struct xy tl;
@@ -47,29 +48,6 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_SEQUENCE,
         .name = "Blind's House Block Puzzle",
     },
-    /*
-    {
-        .start_tl = XY(0x0988, 0x0c80),
-        .start_item = INVENTORY_BOMBS,
-        .sequence = "Yvvvvvvvvvvv",
-        .type = SCRIPT_SEQUENCE,
-        .name = "Bomb wall below Link's House",
-    },
-    {
-        .start_tl = XY(0xe48, 0x0c68),
-        .start_item = INVENTORY_BOMBS,
-        .sequence = "Y>>>>>>>>>>>",
-        .type = SCRIPT_SEQUENCE,
-        .name = "Bomb wall by Ice Rod Cave",
-    },
-    {
-        .start_tl = XY(0x0068, 0x0990),
-        .start_item = INVENTORY_BOMBS,
-        .sequence = "Y>>><<<>>><<<>>><<<>>>",
-        .type = SCRIPT_SEQUENCE,
-        .name = "Bombable Hut in Kak",
-    },
-    */
     {
         .start_tl = XY(0x52f8, 0x0e60),
         .start_item = -1,
@@ -98,6 +76,15 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "HC kill miniboss free Zelda",
     },
+    /* Need to bring old man to "door 0x30"
+    {
+        .start_tl = XY(0x4278, 0x1fc6),
+        .start_item = -1,
+        .sequence = "^^^^^^",
+        .type = SCRIPT_SEQUENCE,
+        .name = "Dark cave ledge jump",
+    },
+    */
 };
 
 static bool add_explore_goals_global = true;
@@ -106,6 +93,7 @@ static const struct ap_screen_info {
     char name[40];
     bool add_explore_goals;
     bool key_doors;
+    bool include_borders;
 } ap_screen_infos[] = {
     // Light Overworld
     { .id = 0x0402, .name = "North of Kak", },
@@ -135,10 +123,11 @@ static const struct ap_screen_info {
     { .id = 0x2388, .name = "Blind's House", .add_explore_goals = true, },
     { .id = 0x23a8, .name = "Blind's Basement", .add_explore_goals = true, },
     { .id = 0x22a8, .name = "Blind's Storage",},
+    { .id = 0x1e40, .name = "DM Dark Cave 1",},
     // Hyrule Castle
     { .id = 0x0c48, .name = "HC Entrance", },
     { .id = 0x0e50, .name = "HC First Key", .key_doors = true, .add_explore_goals = true},
-    { .id = 0x0f50, .name = "HC Walkway"},
+    { .id = 0x0f50, .name = "HC Walkway", .include_borders = true, },
     { .id = 0x0f48, .name = "HC Green Guard"},
     { .id = 0x1040, .name = "HC Zelda Jail"},
     // Eastern Palace
@@ -174,6 +163,9 @@ static int
 ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy destination_tl, struct xy destination_br, bool commit);
 static void
 ap_print_pathfind_local_state(struct point_state *buf, struct xy grid);
+
+static void
+ap_map_add_sprite_nodes_to_screen(struct ap_screen * screen);
 
 static struct xy
 ap_box_edge(struct xy tl, struct xy br, int dir) {
@@ -599,7 +591,8 @@ ap_follow_targets(uint16_t * joypad)
         return RC_FAIL;
     }
 
-    if (!ap_target_scripted && (ap_target_subtimeout-- <= 0 || ap_sprites_changed)) {
+    bool on_stairs = *ap_ram.submodule_index == 0x10 || *ap_ram.submodule_index == 0x08;
+    if (!ap_target_scripted && !on_stairs && (ap_target_subtimeout-- <= 0 || ap_sprites_changed)) {
         int prev_timeout = ap_target_timeout;
         int rc = ap_pathfind_local(NULL, link, ap_target_dst_tl, ap_target_dst_br, true);
         if (rc < 0) {
@@ -781,6 +774,8 @@ ap_path_heuristic(struct xy src, struct xy dst_tl, struct xy dst_br)
     return distance;
 }
 
+static volatile bool save_local_state = false;
+
 static int
 ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy destination_tl, struct xy destination_br, bool commit)
 {
@@ -801,6 +796,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
     }
     if (!XYIN(destination_tl, screen->tl, screen->br)) {
         LOG("error: TL destination " PRIXYV " out of screen", PRIXYVF(destination_tl));
+        assert_bp(false);
         return -1;
     }
     if (!XYIN(destination_br, screen->tl, screen->br)) {
@@ -848,8 +844,10 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
         CORNER_TR,
         CORNER_BL,
         CORNER_BR,
-        CORNER_TA, // Left adjacent square
+        CORNER_TA, // Left adjacent squares
         CORNER_BA,
+        CORNER_AL, // Top adjacent squares
+        CORNER_AR,
         CORNER_AA, // Up-Left diagonally adjacent
     };
     if (grid.x * grid.y > 0x80 * 0x80) {
@@ -924,6 +922,12 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                         if (state[y-1][x-1].corner == CORNER_NONE) {
                             state[y-1][x-1].corner = CORNER_AA;
                         }
+                        if (state[y-1][x-0].corner == CORNER_NONE) {
+                            state[y-1][x-0].corner = CORNER_AL;
+                        }
+                        if (state[y-1][x+1].corner == CORNER_NONE) {
+                            state[y-1][x+1].corner = CORNER_AR;
+                        }
                     }
                 } else if (XYIN(mapxy, destination_tl, destination_br)) {
                     cost = 0;
@@ -938,10 +942,22 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 state[y-1][x-0].cost += cost;
                 state[y-1][x-1].cost += cost;
 
+                //state[y+1][x+1].ledge |= ledge_mask;
+                //state[y+1][x-0].ledge |= ledge_mask;
+                //state[y+1][x-1].ledge |= ledge_mask;
+                //state[y+1][x-2].ledge |= ledge_mask;
+                //state[y-0][x+1].ledge |= ledge_mask;
                 state[y-0][x-0].ledge |= ledge_mask;
                 state[y-0][x-1].ledge |= ledge_mask;
+                //state[y-0][x-2].ledge |= ledge_mask;
+                //state[y-1][x+1].ledge |= ledge_mask;
                 state[y-1][x-0].ledge |= ledge_mask;
                 state[y-1][x-1].ledge |= ledge_mask;
+                //state[y-1][x-2].ledge |= ledge_mask;
+                //state[y-2][x+1].ledge |= ledge_mask;
+                //state[y-2][x-0].ledge |= ledge_mask;
+                //state[y-2][x-1].ledge |= ledge_mask;
+                //state[y-2][x-2].ledge |= ledge_mask;
 
                 if (x < 1 || x >= grid.x - 1 ||
                     y < 1 || y >= grid.y - 1) {
@@ -1016,7 +1032,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
         src.y += 1;
         if (commit) LOG("Nudged Y start");
     }
-    if (commit) {
+    if (save_local_state || commit) {
         ap_print_pathfind_local_state(buf, grid);
     }
 
@@ -1045,8 +1061,10 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
         if (cost != state[node.y][node.x].fscore)
             continue;
         assert_bp(state[node.y][node.x].ledge != 0xFF);
+        const struct point_state *const node_state = &state[node.y][node.x];
         for (uint8_t i = 1; i < 9; i++) {
             struct xy neighbor = XYOP2(node, +, dir_dxy[i]);
+            const struct point_state *const neighbor_state = &state[neighbor.y][neighbor.x];
             if (neighbor.x >= grid.x || neighbor.y >= grid.y)
                 continue;
             assert_bp(state[neighbor.y][neighbor.x].ledge != 0xFF);
@@ -1067,11 +1085,10 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             enum corner corner = state[neighbor.y][neighbor.x].corner;
             if (corner != CORNER_NONE) {
                 if (i >= 5) continue;
-                if ((i == DIR_D || i == DIR_U) && (corner == CORNER_TR || corner == CORNER_BR || corner == CORNER_TA || corner == CORNER_BA))
+                //if ((neighbor_state - node_state) != (node_state - node_state->from)) continue;
+                if ((i == DIR_D || i == DIR_U) && !(corner == CORNER_AL || corner == CORNER_TL || corner == CORNER_BL))
                     continue;
-                if ((i == DIR_L || i == DIR_R) && (corner == CORNER_BL || corner == CORNER_BR))
-                    continue;
-                if ((i == DIR_D || i == DIR_R) && corner == CORNER_AA)
+                if ((i == DIR_L || i == DIR_R) && !(corner == CORNER_TA || corner == CORNER_TL || corner == CORNER_TR))
                     continue;
             }
             /*
@@ -1086,7 +1103,11 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 assert_bp(XYUNDER(neighbor, grid));
             }
             */
-            // Jump down ledges
+            if ((state[neighbor.y][neighbor.x].ledge) && i >= 5) {
+                // Stick to cardinal directions near ledges of any kind
+                continue;
+            }
+            // Jump down ledges (disabled)
             uint8_t ledge_mask = 1ul << (i - 1);
             assert(ledge_mask != 0);
             if (false && (state[node.y][node.x].ledge & ledge_mask)) {
@@ -1098,6 +1119,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                         break;
                     }
                     if (state[neighbor.y][neighbor.x].raw_tile == 0x1C) {
+                        // XXX this is broken now that screens are split by layer
                         assert_bp(neighbor.x & (0x200 / 8));
                         neighbor.x -= 0x200 / 8;
                         neighbor = XYOP2(neighbor, +, dir_dxy[i]);
@@ -1123,12 +1145,14 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 assert_bp(XYUNDER(neighbor, grid));
             } else if (state[node.y][node.x].ledge != 0) {
                 continue;
+            } else if (state[neighbor.y][neighbor.x].ledge != 0) {
+                continue;
             }
             assert_bp(XYUNDER(neighbor, grid));
 
             uint32_t gscore = state[node.y][node.x].gscore;
             gscore += dir_cost[i];
-            if (!(state[node.y][node.x].ledge & ledge_mask)) {
+            if (true || !(state[node.y][node.x].ledge & ledge_mask)) {
                 uint32_t step_cost = state[neighbor.y][neighbor.x].cost;
                 if (i >= 5) {
                     step_cost = MAX(step_cost, state[neighbor.y][node.x].cost);
@@ -2017,6 +2041,7 @@ ap_update_map_screen(bool force)
         return NONNULL(map_screens[index]);
     }
     last_map_index = index;
+    last_screen = map_screens[index];
 
     struct ap_screen * screen = map_screens[index];
     if (screen == NULL) {
@@ -2078,12 +2103,14 @@ ap_update_map_screen(bool force)
             ap_screen_refresh_cache(screen);
             ap_map_add_nodes_to_screen(screen);
             ap_map_add_scripts_to_screen(screen);
+            ap_map_add_sprite_nodes_to_screen(screen);
             ap_map_screen_update_distances(screen);
         }
         screen = map_screens[index];
     } else {
         ap_screen_refresh_cache(screen);
         ap_map_add_nodes_to_screen(screen);
+        ap_map_add_sprite_nodes_to_screen(screen);
     }
 
     ap_map_screen_update_distances(screen);
@@ -2239,6 +2266,10 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                     break;
                 }
             }
+            if (XYEQ(new_start, XY(0, 0)) && XYEQ(new_end, XY(0, 0))) {
+                size = 0;
+                continue;
+            }
             new_node->tl = XYFN2(MIN, new_start, new_end);
             new_node->br = XYFN2(MAX, new_start, new_end);
             new_node->br = XYOP1(new_node->br, + 7);
@@ -2253,7 +2284,26 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             }
             // Skip unreachable border nodes
             if (new_node->tile_attr == 0x00 || (!XYINDOORS(link) && new_node->tile_attr == 0x48)) {
-                if (!XYIN(link, tl, br) || ap_pathfind_local(screen, link, new_node->tl, new_node->br, false) < 0) {
+                bool is_reachable = false;
+                if (screen->info != NULL && screen->info->include_borders) {
+                    is_reachable = true;
+                } else if (XYIN(link, tl, br)) {
+                    is_reachable = ap_pathfind_local(screen, link, new_node->tl, new_node->br, false) > 0;
+                } else {
+                    // XXX This is such a hack
+                    struct xy test_xy = XYMID(tl, br);
+                    is_reachable = ap_pathfind_local(screen, test_xy, new_node->tl, new_node->br, false) > 0;
+                    /*
+                    for (const struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+                        if (ap_pathfind_local(screen, XYMID(node->tl, node->br), new_node->tl, new_node->br, false) > 0) {
+                            is_reachable = true;
+                            break;
+                        }
+                    }
+                    */
+                }
+                if (!is_reachable) {
+                //if (!XYIN(link, tl, br) || ap_pathfind_local(screen, link, new_node->tl, new_node->br, false) < 0) {
                     //if(!XYINDOORS(link)) assert_bp(false); // unreachable
                     new_start = new_end = XY(0, 0);
                     size = 0;
@@ -2736,5 +2786,6 @@ ap_map_tick() {
     struct ap_screen * screen = ap_update_map_screen(false);
     if (ap_sprites_changed) {
         ap_map_add_sprite_nodes_to_screen(screen);
+        //ap_map_screen_update_distances(screen);
     }
 }

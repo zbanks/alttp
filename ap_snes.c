@@ -67,6 +67,10 @@ AP_RAM_LIST
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
     ap_emu->load("home");
+    //ap_emu->load("cave_front");
+    //ap_emu->load("cave");
+    //ap_emu->load("hc_stairs");
+    //ap_emu->load("rock");
     //ap_emu->load("stair_test");
     //ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
@@ -149,7 +153,11 @@ ap_sprites_update() {
                 }
                 break;
             default:
-                sprite->active = sprite->state != 0;
+                if (sprite->attrs & SPRITE_ATTR_TALK) {
+                    sprite->active = true;
+                } else {
+                    sprite->active = sprite->state != 0;
+                }
                 break;
         }
 
