@@ -66,8 +66,8 @@ AP_RAM_LIST
     //ap_emu->load("well");
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
-    //ap_emu->load("home");
-    ap_emu->load("stair_test");
+    ap_emu->load("home");
+    //ap_emu->load("stair_test");
     //ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
     //ap_emu->load("blinds_house");
@@ -249,3 +249,38 @@ const char * const ap_inventory_names[] = {
 INVENTORY_LIST
 #undef X
 };
+
+struct ap_ancillia ap_ancillia[N_ANCILLIA];
+
+void
+ap_ancillia_update() {
+    for (size_t i = 0; i < N_ANCILLIA; i++) {
+        struct ap_ancillia * ancillia = &ap_ancillia[i];
+        ancillia->type = ap_ram.ancillia_type[i];
+        ancillia->bf0 = ap_ram.ancillia_bf0[i];
+        ancillia->tl = XY(ap_ram.ancillia_x_lo[i], ap_ram.ancillia_y_hi[i]);
+        ancillia->tl.x += ap_ram.ancillia_x_hi[i] << 8u;
+        ancillia->tl.y += ap_ram.ancillia_y_hi[i] << 8u;
+        ancillia->subpixel = XY(ap_ram.ancillia_x_sub[i], ap_ram.ancillia_y_sub[i]);
+        ancillia->velocity = XY(ap_ram.ancillia_x_vel[i], ap_ram.ancillia_y_vel[i]);
+    }
+}
+
+void
+ap_ancillia_print() {
+    const struct xy link = ap_link_xy();
+    bool printed_any = false;
+    for (size_t i = 0; i < N_ANCILLIA; i++) {
+        const struct ap_ancillia * ancillia = &ap_ancillia[i];
+        if (ancillia->type == 0) {
+            continue;
+        }
+        LOG("Ancillia %zu: type=%#x bf0=%#x " PRIXYV " dist=%d",
+            i, ancillia->type, ancillia->bf0,
+            PRIXYVF(ancillia->tl), XYL1DIST(link, ancillia->tl));
+        printed_any = true;
+    }
+    if (!printed_any) {
+        LOG("No Ancillia");
+    }
+}

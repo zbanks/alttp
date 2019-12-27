@@ -108,9 +108,14 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
             ap_req_require(&goal->req, 0, REQUIREMENT_SWORD);
         }
         */
-    if (type == GOAL_EXPLORE && (ap_tile_attrs[node->tile_attr] & TILE_ATTR_SWIM)) {
-        //ap_graph_add_prereq(&goal->graph, &item_goal_flippers->graph);
-        ap_req_require(&goal->req, 0, REQUIREMENT_FLIPPERS);
+    if (type == GOAL_EXPLORE) {
+        uint16_t attrs = ap_tile_attrs[node->tile_attr];
+        if (attrs & TILE_ATTR_SWIM) {
+            ap_req_require(&goal->req, 0, REQUIREMENT_FLIPPERS);
+        }
+        if (attrs & TILE_ATTR_BONK) {
+            ap_req_require(&goal->req, 0, REQUIREMENT_BOOTS);
+        }
     }
     return goal;
 }
@@ -155,6 +160,9 @@ ap_print_task(const struct ap_task * task)
     case TASK_SET_INVENTORY:
         buf += sprintf(buf, " [item=%#x]", task->item);
         break;
+    case TASK_BOMB:
+        buf += sprintf(buf, " [bomb=%s]", task->node->name);
+        break;
     case TASK_NONE:
         break;
     }
@@ -183,17 +191,37 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node)) {
         if (task->node->lock_node == NULL)
             return RC_FAIL;
-        // Prepend an unlock task
-        struct ap_task * new_task = ap_task_prepend(); 
-        new_task->type = TASK_GOTO_POINT;
-        new_task->node = task->node->lock_node;
-        snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
-        // Maybe we need to step off first
-        new_task = ap_task_prepend(); 
-        new_task->type = TASK_STEP_OFF_SWITCH;
-        new_task->node = task->node->lock_node;
-        snprintf(new_task->name, sizeof new_task->name, "step off");
-        LOGB("Locked door; prepending switch steps");
+
+        if (task->node->lock_node->type == NODE_OVERLAY) {
+            // Try bombing it
+            struct ap_task * new_task = ap_task_prepend(); 
+            new_task->type = TASK_BOMB;
+            new_task->node = task->node->lock_node;
+            snprintf(new_task->name, sizeof new_task->name, "bomb open");
+
+            new_task = ap_task_prepend(); 
+            new_task->type = TASK_SET_INVENTORY;
+            new_task->item = INVENTORY_BOMBS;
+            snprintf(new_task->name, sizeof new_task->name, "set bombs");
+
+            new_task = ap_task_prepend(); 
+            new_task->type = TASK_GOTO_POINT;
+            new_task->node = task->node->lock_node;
+            snprintf(new_task->name, sizeof new_task->name, "goto bomb %s", task->node->name);
+        } else {
+            // Prepend an unlock task
+            struct ap_task * new_task = ap_task_prepend(); 
+            new_task->type = TASK_GOTO_POINT;
+            new_task->node = task->node->lock_node;
+            snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
+
+            // Maybe we need to step off first
+            new_task = ap_task_prepend(); 
+            new_task->type = TASK_STEP_OFF_SWITCH;
+            new_task->node = task->node->lock_node;
+            snprintf(new_task->name, sizeof new_task->name, "step off");
+        }
+        LOGB("Locked/bombable door; prepending open steps");
         return RC_INPR; // XXX should there be RC_RTRY?
     }
 
@@ -338,6 +366,10 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                 break;
             }
         case 2:
+            if (submodule_index == 0x10) {
+                task->timeout++;
+                break;
+            }
             if (task->timeout == 1) {
                 if (screen != task->node->screen) {
                     ap_map_record_transition_from(task->node);
@@ -380,6 +412,40 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             if (task->timeout & 1) {
                 JOYPAD_SET(START);
             }
+        }
+        break;
+    case TASK_BOMB:;
+        bool active_bomb = false;
+        for (size_t i = 0; i < N_ANCILLIA; i++) {
+            if (ap_ancillia[i].type == 0x07) {
+                active_bomb = true;
+                break;
+            }
+        }
+        switch (task->state) {
+        case 0:
+            if (*ap_ram.current_item != INVENTORY_BOMBS) {
+                return RC_FAIL;
+            }
+            if (*ap_ram.inventory_bombs == 0) {
+                return RC_FAIL;
+            }
+            task->timeout = 200;
+            task->state++;
+            JOYPAD_SET(Y);
+            break;
+        case 1:
+            JOYPAD_CLEAR(Y);
+            if (active_bomb) {
+                task->state++;
+            }
+            break;
+        case 2:
+            // TODO: Dodge the bomb
+            if (!active_bomb) {
+                return RC_DONE;
+            }
+            break;
         }
         break;
     case TASK_SCRIPT_SEQUENCE:
@@ -732,7 +798,7 @@ ap_plan_evaluate(uint16_t * joypad)
     while (true) {
         if (ap_active_goal == NULL) {
             ap_goal_evaluate();
-            if (ap_active_goal == NULL) return;
+            if (ap_active_goal == NULL) goto done;
             ap_print_tasks();
         }
 
@@ -740,7 +806,7 @@ ap_plan_evaluate(uint16_t * joypad)
         if (task == NULL) {
             ap_goal_complete(ap_active_goal);
             task = LL_PEEK(ap_task_list);
-            if (task == NULL) return;
+            if (task == NULL) goto done;
         }
 
         enum rc rc = ap_task_evaluate(task, joypad);
@@ -756,10 +822,24 @@ ap_plan_evaluate(uint16_t * joypad)
             LOG("task failed: " TERM_RED(PRITASK), PRITASKF(task));
             ap_goal_fail(ap_active_goal);
             break;
-        case RC_INPR:
-            return;
+        case RC_INPR:;
+            goto done;
         }
     }
+
+done:;
+    // Debug
+    const char *goal_name = "(no goal)";
+    if (ap_active_goal != NULL) {
+        goal_name = ap_goal_type_names[ap_active_goal->type];
+    }
+    const char *task_name = "(no task)";
+    int task_timeout = 0;
+    if (LL_PEEK(ap_task_list) != NULL) {
+        task_name = ap_task_type_names[LL_PEEK(ap_task_list)->type];
+        task_timeout = LL_PEEK(ap_task_list)->timeout;
+    }
+    INFO("Plan: %s, %s (%d)", goal_name, task_name, task_timeout);
 }
 
 void

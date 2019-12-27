@@ -47,6 +47,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_SEQUENCE,
         .name = "Blind's House Block Puzzle",
     },
+    /*
     {
         .start_tl = XY(0x0988, 0x0c80),
         .start_item = INVENTORY_BOMBS,
@@ -55,12 +56,20 @@ static const struct ap_script ap_scripts[] = {
         .name = "Bomb wall below Link's House",
     },
     {
+        .start_tl = XY(0xe48, 0x0c68),
+        .start_item = INVENTORY_BOMBS,
+        .sequence = "Y>>>>>>>>>>>",
+        .type = SCRIPT_SEQUENCE,
+        .name = "Bomb wall by Ice Rod Cave",
+    },
+    {
         .start_tl = XY(0x0068, 0x0990),
         .start_item = INVENTORY_BOMBS,
         .sequence = "Y>>><<<>>><<<>>><<<>>>",
         .type = SCRIPT_SEQUENCE,
         .name = "Bombable Hut in Kak",
     },
+    */
     {
         .start_tl = XY(0x52f8, 0x0e60),
         .start_item = -1,
@@ -430,7 +439,11 @@ ap_print_map_screen(struct ap_screen * screen)
     struct xy screen_size = XYOP1(XYOP2(screen->br, -, screen->tl), / 8 + 1);
     fprintf(mapimg, "P6 %u %u %u\n", screen_size.x, screen_size.y, 255);
 
-    uint16_t semi_tile_attrs = TILE_ATTR_LFT0 | TILE_ATTR_DOOR;
+    uint16_t lift_mask = TILE_ATTR_LFT0;
+    if (*ap_ram.inventory_gloves >= 1) lift_mask |= TILE_ATTR_LFT1;
+    if (*ap_ram.inventory_gloves >= 2) lift_mask |= TILE_ATTR_LFT2;
+
+    uint16_t semi_tile_attrs = lift_mask | TILE_ATTR_DOOR;
     bool inside = XYINDOORS(screen->tl);
 
     for (struct xy xy = screen->tl; xy.y < screen->br.y; xy.y += 8) {
@@ -444,6 +457,14 @@ ap_print_map_screen(struct ap_screen * screen)
                 fprintf(mapimg, "%c%c%c", 0, 128, 0);
                 goto next_point;
             } 
+            for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+                if (XYIN(xy, node->tl, node->br)) {
+                    if (node->type == NODE_OVERLAY) {
+                        fprintf(mapf, TERM_CYAN(TERM_BOLD("%02x ")), tile_attr);
+                        goto next_point;
+                    }
+                }
+            }
             for (uint8_t i = 0; i < 16; i++) {
                 if (ap_sprites[i].type == 0) {
                     continue;
@@ -581,7 +602,12 @@ ap_follow_targets(uint16_t * joypad)
     if (!ap_target_scripted && (ap_target_subtimeout-- <= 0 || ap_sprites_changed)) {
         int prev_timeout = ap_target_timeout;
         int rc = ap_pathfind_local(NULL, link, ap_target_dst_tl, ap_target_dst_br, true);
-        assert_bp(rc >= 0);
+        if (rc < 0) {
+            LOGB("Path is now blocked");
+            ap_target_count = 0;
+            ap_target_timeout = -1;
+            return RC_FAIL;
+        }
         ap_target_timeout = MIN(prev_timeout, ap_target_timeout);
     }
 
@@ -770,15 +796,15 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
     }
 
     if (!XYIN(start_xy, screen->tl, screen->br)) {
-        LOG("error: Start " PRIXYV "out of screen", PRIXYVF(start_xy));
+        LOG("error: Start " PRIXYV " out of screen", PRIXYVF(start_xy));
         return -1;
     }
     if (!XYIN(destination_tl, screen->tl, screen->br)) {
-        LOG("error: TL destination " PRIXYV "out of screen", PRIXYVF(destination_tl));
+        LOG("error: TL destination " PRIXYV " out of screen", PRIXYVF(destination_tl));
         return -1;
     }
     if (!XYIN(destination_br, screen->tl, screen->br)) {
-        LOG("error: BR destination " PRIXYV "out of screen", PRIXYVF(destination_br));
+        LOG("error: BR destination " PRIXYV " out of screen", PRIXYVF(destination_br));
         return -1;
     }
 
@@ -808,6 +834,10 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
         return ap_target_count = 1;
     }
     */
+
+    uint16_t lift_mask = TILE_ATTR_LFT0;
+    if (*ap_ram.inventory_gloves >= 1) lift_mask |= TILE_ATTR_LFT1;
+    if (*ap_ram.inventory_gloves >= 2) lift_mask |= TILE_ATTR_LFT2;
 
     static struct point_state buf[0x82 * 0x82]; 
 
@@ -880,9 +910,9 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                     //cost = 0;
                     assert_bp((raw_tile &~0x7) == 0x28);
                     ledge_mask = 1ul << (raw_tile & 0x7);
-                } else if (tile & TILE_ATTR_LFT0) {
-                    cost = 40;
-                    if (state[y][x].corner == CORNER_NONE)  {
+                } else if (tile & lift_mask) {
+                    cost = 20;
+                    if (state[y][x].corner == CORNER_NONE && raw_tile != 0x55)  {
                         state[y][x].corner = CORNER_TL;
                         state[y][x+1].corner = CORNER_TR;
                         state[y+1][x].corner = CORNER_BL;
@@ -1025,13 +1055,13 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
 
             // Only pick up objects if you are square with them
             if (i == DIR_U || i == DIR_D || i >= 5) {
-                if ((state[neighbor.y][node.x].tile_attrs & TILE_ATTR_LFT0) !=
-                    (state[neighbor.y][node.x+1].tile_attrs & TILE_ATTR_LFT0))
+                if ((state[neighbor.y][node.x].tile_attrs & lift_mask) !=
+                    (state[neighbor.y][node.x+1].tile_attrs & lift_mask))
                     continue;
             }
             if (i == DIR_L || i == DIR_R || i >= 5) {
-                if ((state[node.y][neighbor.x].tile_attrs & TILE_ATTR_LFT0) !=
-                    (state[node.y+1][neighbor.x].tile_attrs & TILE_ATTR_LFT0))
+                if ((state[node.y][neighbor.x].tile_attrs & lift_mask) !=
+                    (state[node.y+1][neighbor.x].tile_attrs & lift_mask))
                     continue;
             }
             enum corner corner = state[neighbor.y][neighbor.x].corner;
@@ -1693,6 +1723,17 @@ ap_set_script(const struct ap_script * script) {
 static void
 ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
 {
+    // Pair overlays
+    for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+        if (XYEQ(node->tl, new_node->tl) && XYEQ(node->br, new_node->br)) {
+            if (node->type == NODE_TRANSITION && new_node->type == NODE_OVERLAY) {
+                node->lock_node = new_node;
+            } else if (node->type == NODE_OVERLAY && new_node->type == NODE_TRANSITION) {
+                new_node->lock_node = node;
+            }
+        }
+    }
+
     // Attach to screen
     new_node->screen = screen;
     LL_INIT(new_node);
@@ -1752,6 +1793,8 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
     case NODE_SCRIPT:
         new_node->goal = ap_goal_add(GOAL_SCRIPT, new_node);
         break;
+    case NODE_OVERLAY:
+        break;
     case NODE_NONE:
     default:
         assert_bp(false);
@@ -1782,6 +1825,10 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
         }
     }
     */
+    if (strcmp(new_node->name, "door L 0xf0 DOOR|NODE") && new_node->screen->id == 0x1488) {
+        // Door into EP stalfos room
+        new_node->_debug_blocked = true;
+    }
 
     /*
     if (strcmp(new_node->name, "0x198A D 4") == 0) {
@@ -2043,6 +2090,7 @@ ap_update_map_screen(bool force)
 
     //ap_graph_mark_done(&screen->graph);
     ap_sprites_print();
+    ap_ancillia_print();
     ap_print_map_screen(screen);
     // TODO: Skip this if link is not yet on the screen
     printf("Nodes: [(un)Reachable? (un)Adjacent?] (tl x br) type \"name\"\n");
@@ -2113,11 +2161,16 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
     struct xy tl = screen->tl;
     struct xy br = screen->br;
     size_t index = XYMAPSCREEN(tl);
+    struct xy link = ap_link_xy();
 
     int new_node_count = 0;
     static struct ap_node * new_node = NULL;
     if (new_node == NULL)
         new_node = NONNULL(calloc(1, sizeof *new_node));
+
+    uint16_t lift_mask = TILE_ATTR_LFT0;
+    if (*ap_ram.inventory_gloves >= 1) lift_mask |= TILE_ATTR_LFT1;
+    if (*ap_ram.inventory_gloves >= 2) lift_mask |= TILE_ATTR_LFT2;
 
     //uint16_t walk_mask = TILE_ATTR_WALK | TILE_ATTR_SWIM;
     uint16_t walk_mask = TILE_ATTR_WALK | TILE_ATTR_DOOR;
@@ -2198,6 +2251,15 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 new_node->locked_xy = XYOP1(new_node->locked_xy, &~7);
                 uint8_t attr = ap_map_attr(new_node->locked_xy);
             }
+            // Skip unreachable border nodes
+            if (new_node->tile_attr == 0x00 || (!XYINDOORS(link) && new_node->tile_attr == 0x48)) {
+                if (!XYIN(link, tl, br) || ap_pathfind_local(screen, link, new_node->tl, new_node->br, false) < 0) {
+                    //if(!XYINDOORS(link)) assert_bp(false); // unreachable
+                    new_start = new_end = XY(0, 0);
+                    size = 0;
+                    continue;
+                }
+            }
 
             //new_node->adjacent_screen = &map_screens[XYMAPSCREEN(XYOP2(new_node->tl, +, XYOP1(dir_dxy[i], * 0x100)))];
             snprintf(new_node->name, sizeof new_node->name, "0x%02zX %s %d%s", index, dir_names[i], ++new_node_count, XYEQ(new_node->locked_xy, XY(0, 0)) ? "" : " l");
@@ -2218,11 +2280,13 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 continue;
             }
 
+            struct xy original_xy = ap_map16_to_xy(tl, ap_ram.over_ent_map16s[i]);
             new_node->tl = ap_map16_to_xy(tl, ap_ram.over_ent_map16s[i]);
             new_node->tl.y += 16;
             new_node->br = XYOP1(new_node->tl, + 15);
             new_node->type = NODE_TRANSITION;
-            new_node->tile_attr = 0x80; // not quite true
+            //new_node->tile_attr = 0x80; // not quite true
+            new_node->tile_attr = ap_map_attr(original_xy);
             struct xy entrance = XY(ap_ram.entrance_xs[id], ap_ram.entrance_ys[id]);
             //new_node->adjacent_screen = &map_screens[XYMAPSCREEN(entrance)];
             new_node->adjacent_direction = DIR_U;
@@ -2231,6 +2295,20 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             ap_screen_commit_node(screen, &new_node);
             new_node_count++;
         }
+
+        // Overlays (Bombable Walls)
+        uint16_t overlay_map16 = ap_ram.over_overlay_map16s[*ap_ram.overworld_index];
+        if (overlay_map16 != 0) {
+            new_node->overlay_index = *ap_ram.overworld_index;
+            new_node->tl = ap_map16_to_xy(tl, overlay_map16);
+            new_node->br = XYOP1(new_node->tl, + 15);
+            new_node->type = NODE_OVERLAY;
+            new_node->tile_attr = 0;
+            snprintf(new_node->name, sizeof new_node->name, "overlay %#x", *ap_ram.overworld_index);
+            ap_screen_commit_node(screen, &new_node);
+            new_node_count++;
+        }
+
         /* TODO: work out map16 decoding
         for (size_t i = 1; i < 0x1C; i++) {
             if (ap_ram.over_hle_areas[i] != *ap_ram.map_area)
@@ -2349,12 +2427,12 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                     //new_node->br.y += 24;
                 }
                 new_node->type = NODE_TRANSITION;
-                if ((attr & 0xF0) == 0x10 || attr == 0x5E || attr == 0x3F) {
+                if ((attr & 0xF0) == 0x10 || attr == 0x5E) {
                     new_node->adjacent_direction = DIR_U;
                 } else {
                     new_node->adjacent_direction = DIR_D;
                 }
-                if (attr == 0x3E || attr == 0x3F) {
+                if (attr == 0x3E || attr == 0x1E) { // TODO: Stairs 0x1F, 0x3F, 0x5F
                     if (xy.x & 0x200) { // on upper level
                         new_node->adjacent_direction = dir_opp[new_node->adjacent_direction];
                     }
@@ -2406,7 +2484,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 new_node->type = NODE_SWITCH;
                 new_node->adjacent_direction = 0;
                 snprintf(new_node->name, sizeof new_node->name, "switch 0x%02x %s", attr, attr_name);
-            } else if (ap_tile_attrs[attr] & TILE_ATTR_LFT0) {
+            } else if (ap_tile_attrs[attr] & lift_mask) {
                 size_t i;
                 for (i = 0; i < ARRAYLEN(ap_pushblocks); i++) {
                     if (XYEQ(ap_pushblocks[i].tl, new_node->tl)) {
@@ -2495,6 +2573,11 @@ ap_node_islocked(struct ap_node * node) {
         if (node->screen->info->key_doors && *ap_ram.dungeon_current_keys > 0) {
             return false;
         }
+    }
+
+    // Overworld overlays (bombable walls)
+    if (node->lock_node != NULL && node->lock_node->type == NODE_OVERLAY) {
+        return !(ap_ram.sram_overworld_state[node->lock_node->overlay_index] & 0x02);
     }
 
     uint8_t tile_attr_tl = ap_map_attr(node->tl);

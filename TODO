@@ -1,5 +1,8 @@
 * With diagonal movement, need to check the corners
+    - Punted by removing diagonal movement
 * Mark how to open doors in rooms (e.g. defeat all enemies)
+    - Temporary workaround: SCRIPT_KILLALL
+    - Future: add TASK_KILLALL
 * Defeat all the stalfos in that one room in eastern palace
 * Handle/detect big chest
 * Bomb walls
@@ -15,3 +18,5 @@
     - How to encode which doors need keys?
 * Prune "clearly invalid" unreachable, walkable edges on screens
     - May not be important once the whole map exists
+* Avoid bomb explosions
+* Indoor overlays

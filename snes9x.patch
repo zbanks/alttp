@@ -1,12 +1,12 @@
 diff --git a/unix/unix.cpp b/unix/unix.cpp
-index cc82fa5..8d49644 100644
+index cc82fa5..191760e 100644
 --- a/unix/unix.cpp
 +++ b/unix/unix.cpp
 @@ -237,6 +237,7 @@
  #include "debug.h"
  #endif
  #include "statemanager.h"
-+#include "../alttp2/alttp_public.h"
++#include "../alttp/alttp_public.h"
  
  #ifdef NETPLAY_SUPPORT
  #ifdef _DEBUG
@@ -28,7 +28,7 @@ index cc82fa5..8d49644 100644
  void _splitpath (const char *path, char *drive, char *dir, char *fname, char *ext)
  {
 @@ -1889,6 +1900,12 @@ int main (int argc, char **argv)
-        bool8   NP_Activated = Settings.NetPlay;
+ 	bool8	NP_Activated = Settings.NetPlay;
  #endif
  
 +    alttp.base = alttp_base;
@@ -37,22 +37,40 @@ index cc82fa5..8d49644 100644
 +    alttp.info_string_ptr = &GFX.InfoString;
 +    ap_init(&alttp);
 +
-        while (1)
-        {
-        #ifdef NETPLAY_SUPPORT
+ 	while (1)
+ 	{
+ 	#ifdef NETPLAY_SUPPORT
 @@ -1933,8 +1950,13 @@ int main (int argc, char **argv)
-                                rewinding = stateMan.pop();
-                        else if(IPPU.TotalEmulatedFrames % unixSettings.rewindGranularity == 0)
-                                stateMan.push();
+ 				rewinding = stateMan.pop();
+ 			else if(IPPU.TotalEmulatedFrames % unixSettings.rewindGranularity == 0)
+ 				stateMan.push();
 -
 +            
 +            uint16 jpb = MovieGetJoypad(0);
 +            uint16 old_jpb = jpb;
 +            ap_tick(IPPU.TotalEmulatedFrames, &jpb);
 +            MovieSetJoypad(0, jpb);
-                        S9xMainLoop();
+ 			S9xMainLoop();
 +            MovieSetJoypad(0, old_jpb);
-                }
+ 		}
  
-        #ifdef NETPLAY_SUPPORT
-
+ 	#ifdef NETPLAY_SUPPORT
+diff --git a/unix/Makefile.in b/unix/Makefile.in
+index 7d321e8..1247df1 100644
+--- a/unix/Makefile.in
++++ b/unix/Makefile.in
+@@ -51,8 +51,12 @@ configure: configure.ac
+ 	@echo "configure is older than in-file. Run autoconf or touch configure."
+ 	exit 1
+ 
+-snes9x: $(OBJECTS)
+-	$(CCC) $(LDFLAGS) $(INCLUDES) -o $@ $(OBJECTS) -lm @S9XLIBS@
++../alttp/build/libalttp.a: $(wildcard ../alttp/*)
++	$(MAKE) -C ../alttp/
++
++snes9x: $(OBJECTS) ../alttp/build/libalttp.a
++
++	$(CCC) $(LDFLAGS) $(INCLUDES) -o $@ $^ $(OBJECTS) -lm @S9XLIBS@
+ 
+ ../jma/s9x-jma.o: ../jma/s9x-jma.cpp
+ 	$(CCC) $(INCLUDES) -c $(CCFLAGS) -fexceptions $*.cpp -o $@

@@ -60,6 +60,7 @@ DIR_LIST
     X(SWITCH) \
     X(SPRITE) \
     X(SCRIPT) \
+    X(OVERLAY) \
 
 struct ap_screen;
 struct ap_node {
@@ -77,6 +78,7 @@ struct ap_node {
     struct ap_node * lock_node;
     const struct ap_script * script;
     struct ap_goal * goal;
+    uint8_t overlay_index;
 
     enum ap_node_type {
 #define X(type) CONCAT(NODE_, type),

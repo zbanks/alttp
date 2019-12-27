@@ -14,6 +14,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 
     *ap_emu->info_string_ptr = ap_info_string;
     ap_sprites_update();
+    ap_ancillia_update();
 
     // Cheating!
     //*(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;
@@ -65,12 +66,12 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     uint8_t module_index = *ap_ram.module_index;
     uint8_t submodule_index = *ap_ram.submodule_index;
     //LOG("Module: %x; Submodule: %x", module_index, submodule_index);
-    INFO("Module: %#x; Submodule: %#x; %d", module_index, submodule_index, frame);
+    //INFO("Module: %#x; Submodule: %#x; %d", module_index, submodule_index, frame);
     switch (module_index) {
     case 0x07:
     case 0x09:
     case 0x0B:
-        if (submodule_index == 0x08) {
+        if (submodule_index == 0x08 || submodule_index == 0x10) {
             // Stairs; keep following targets (even though we can't change direction);
             ap_follow_targets(joypad);
         }
@@ -119,7 +120,9 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 
     ap_debug = JOYPAD_TEST(START);
     ap_map_tick();
-    if (*ap_ram.link_state != LINK_STATE_GROUND) {
+    if (*ap_ram.link_state == LINK_STATE_HOLDING_BIG_ROCK) {
+        JOYPAD_MASH(A, 0x01);
+    } else if (*ap_ram.link_state != LINK_STATE_GROUND) {
     } else {
         if (!JOYPAD_TEST(Y)) {
             ap_plan_evaluate(joypad);
@@ -135,7 +138,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     //INFO("%u L:" PRIXY " M: " PRIXY "," PRIXY " m %u", *ap_ram.dungeon_room, PRIXYF(ap_link_xy()), PRIXYF(topleft), PRIXYF(bottomright), XYMAPSCREEN(topleft));
 
     static uint16_t x = 0;
-    if (x++ == 4000 && false) {
+    if (x++ == 4000) { // && false) {
         ap_print_map_full();
         //ap_graph_print();
         char reqs[4096];
@@ -143,7 +146,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         LOGB("Current requirements satisfied: %s", reqs);
         char filename[128];
         snprintf(filename, sizeof filename, "map_state.8.%08u.txt", frame);
-        ap_map_export(filename);
+        //ap_map_export(filename);
         x = 0;
     }
 

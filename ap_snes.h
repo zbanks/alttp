@@ -73,6 +73,16 @@ bool ap_manual_mode;
     X(sprite_subtype2,      uint8_t,   0x7E0E80)   \
     X(sprite_lower_level,   uint8_t,   0x7E0F20)   \
     X(sprite_hitbox_idx,    uint8_t,   0x7E0F60)   \
+    X(ancillia_bf0,         uint8_t,   0x7E0BF0)   \
+    X(ancillia_y_lo,        uint8_t,   0x7E0BFA)   \
+    X(ancillia_x_lo,        uint8_t,   0x7E0C04)   \
+    X(ancillia_y_hi,        uint8_t,   0x7E0C0E)   \
+    X(ancillia_x_hi,        uint8_t,   0x7E0C18)   \
+    X(ancillia_y_vel,       int8_t,    0x7E0C22)   \
+    X(ancillia_x_vel,       int8_t,    0x7E0C2C)   \
+    X(ancillia_y_sub,       uint8_t,   0x7E0C36)   \
+    X(ancillia_x_sub,       uint8_t,   0x7E0C40)   \
+    X(ancillia_type,        uint8_t,   0x7E0C4A)   \
     X(hitbox_x_lo,          uint8_t,   0x06F735)   \
     X(hitbox_x_hi,          uint8_t,   0x06F755)   \
     X(hitbox_width,         uint8_t,   0x06F775)   \
@@ -106,6 +116,7 @@ bool ap_manual_mode;
     X(over_hle_map16s,      uint16_t,  0x1BB800)   \
     X(over_hle_areas,       uint16_t,  0x1BB826)   \
     X(over_hle_ids,         uint8_t,   0x1BB84C)   \
+    X(over_overlay_map16s,  uint16_t,  0x02EB29)   \
     X(touching_chest,       uint8_t,   0x7E02E5)   \
     X(item_recv_method,     uint8_t,   0x7E02E9)   \
     X(push_dir_bitmask,     uint8_t,   0x7E0026)   \
@@ -116,6 +127,7 @@ bool ap_manual_mode;
     X(sram_overworld_state, uint8_t,   0x7EF280)   \
     X(inventory_base,       uint8_t,   0x7EF33F)   \
     X(inventory_bombs,      uint8_t,   0x7EF343)   \
+    X(inventory_gloves,     uint8_t,   0x7EF354)   \
     X(inventory_sword,      uint8_t,   0x7EF359)   \
     X(dungeon_bigkeys,      uint16_t,  0x7EF366)   \
     X(dungeon_keys,         uint8_t,   0x7EF37C)   \
@@ -168,8 +180,10 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x09] = TILE_ATTR_WALK,
     [0x10] = 0, // edge of ledge?
     [0x1c] = TILE_ATTR_WALK, // open below?
+    // XXX how do these work; how are they different than 0x3X
     [0x1d] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
-    [0x1e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
+    [0x1e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
+    [0x1f] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
 
     [0x22] = TILE_ATTR_WALK,
     [0x23] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button 0x8000
@@ -199,8 +213,9 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x38] = 0,
     [0x39] = 0,
 
-    [0x3d] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
-    [0x3e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs?
+    [0x3d] = TILE_ATTR_WALK, // in-room stairs that do not change BG
+    [0x3e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs ^-shaped
+    [0x3f] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
 
     [0x40] = TILE_ATTR_WALK,
     [0x48] = TILE_ATTR_WALK,
@@ -311,6 +326,8 @@ enum ap_link_state {
     LINK_STATE_FALLING_HOLE = 0x1,
     LINK_STATE_SWIMMING = 0x4,
     LINK_STATE_FALLING_LEDGE = 0x11,
+    LINK_STATE_RECVING_ITEM = 0x15,
+    LINK_STATE_HOLDING_BIG_ROCK = 0x18,
 };
 /* Link State
     0x0 - ground state
@@ -337,7 +354,7 @@ enum ap_link_state {
     0x15 - holding up an item
     0x16 - asleep in his bed
     0x17 - permabunny
-    0x18 - stuck under a heavy rock
+    0x18 - stuck holding a heavy rock
     0x19 - Receiving Ether Medallion
     0x1A - Receiving Bombos Medallion
     0x1B - Opening Desert Palace
@@ -420,7 +437,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x13] = SPRITE_ATTR_ENMY, // Helmasaur?
     [0x14] = SPRITE_ATTR_BLKF, // Gargoyles Domain Gate
     [0x15] = SPRITE_ATTR_ENMY, // Fire Faery
-    [0x16] = SPRITE_ATTR_BLKF, // Sahashrala / Aginah, sage of the desert
+    [0x16] = SPRITE_ATTR_BLKS | SPRITE_ATTR_TALK | SPRITE_ATTR_NODE, // Sahashrala / Aginah, sage of the desert
     [0x17] = SPRITE_ATTR_ENMY, // Water Bubbles?
     [0x18] = SPRITE_ATTR_ENMY, // Moldorm
     [0x19] = SPRITE_ATTR_ENMY, // Poe
@@ -742,8 +759,9 @@ static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
     X(0x12, BLUE_CANE) \
     X(0x13, MAGIC_CAPE) \
     X(0x14, MIRROR) \
+    X(0x16, BOOTS) \
+    X(0x17, FLIPPERS) \
     X(0x1A, SWORD) \
-    X(0x57, FLIPPERS) \
 
 enum {
 #define X(i, n) CONCAT(INVENTORY_, n) = i,
@@ -752,3 +770,15 @@ INVENTORY_LIST
 };
 
 extern const char * const ap_inventory_names[];
+
+#define N_ANCILLIA ((size_t) 10)
+extern struct ap_ancillia {
+    uint8_t type;
+    uint8_t bf0; // 0xBF0
+    struct xy tl;
+    struct xy subpixel;
+    struct xy velocity;
+} ap_ancillia[N_ANCILLIA];
+
+void ap_ancillia_update();
+void ap_ancillia_print();
