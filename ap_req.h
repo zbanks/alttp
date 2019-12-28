@@ -30,6 +30,10 @@ void ap_req_print(const struct ap_req * req, char *buf);
     INVENTORY_LIST \
     X(0, MASTER_SWORD) \
     X(0, KEY) \
+    X(0, GREEN_PENDANT) \
+    X(0, ALL_PENDANTS) \
+    X(0, SIXSEVEN_CRYSTALS) \
+    X(0, ALL_CRYSTALS) \
 
 enum ap_requirement {
 #define X(i, n) CONCAT(REQUIREMENT_, n),

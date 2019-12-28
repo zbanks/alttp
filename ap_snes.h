@@ -125,6 +125,8 @@ bool ap_manual_mode;
     X(ignore_sprites,       uint8_t,   0x7E037B)   \
     X(sram_room_state,      uint16_t,  0x7EF000)   \
     X(sram_overworld_state, uint8_t,   0x7EF280)   \
+    X(sram_pendants,        uint8_t,   0x7EF374)   \
+    X(sram_crystals,        uint8_t,   0x7EF37A)   \
     X(inventory_base,       uint8_t,   0x7EF33F)   \
     X(inventory_bombs,      uint8_t,   0x7EF343)   \
     X(inventory_gloves,     uint8_t,   0x7EF354)   \
@@ -685,7 +687,7 @@ static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
     { .type = 0x16, .subtype = 0x0100, .attrs = 0 }, // Desert Sage
     { .type = 0x73, .subtype = 0x0000, .attrs = SPRITE_ATTR_BLKF }, // Barrier in Sanctuary
     { .type = 0x73, .subtype = 0x0100, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE }, // Link's Uncle
-    { .type = 0x73, .subtype = 0x0200, .attrs = SPRITE_ATTR_BLKF }, // Guy next to Zelda
+    { .type = 0x73, .subtype = 0x0200, .attrs = SPRITE_ATTR_BLKS }, // Guy next to Zelda
 };
 
 // module_index

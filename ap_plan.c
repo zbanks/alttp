@@ -118,6 +118,10 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
             ap_req_require(&goal->req, 0, REQUIREMENT_SWORD);
         }
         */
+    if (type == GOAL_NPC && node->sprite_type == 0x16 && node->sprite_subtype == 0x0000) {
+        // Sahashrala needs the green pendant before giving us an item
+        ap_req_require(&goal->req, 0, REQUIREMENT_GREEN_PENDANT);
+    }
     if (type == GOAL_EXPLORE) {
         uint16_t attrs = ap_tile_attrs[node->tile_attr];
         if (attrs & TILE_ATTR_SWIM) {
@@ -125,6 +129,14 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
         }
         if (attrs & TILE_ATTR_BONK) {
             ap_req_require(&goal->req, 0, REQUIREMENT_BOOTS);
+        }
+        if (strcmp(node->name, "door 0x24") == 0) {
+            // Castle door to Agahnim
+            ap_req_require(&goal->req, 0, REQUIREMENT_MASTER_SWORD);
+        }
+        if (strcmp(node->name, "door 0x09") == 0) {
+            // Desert Palace
+            ap_req_require(&goal->req, 0, REQUIREMENT_BOOK);
         }
     }
     return goal;

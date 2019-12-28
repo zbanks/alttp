@@ -53,6 +53,18 @@ void ap_req_update() {
         // XXX how to handle this across dungeons
         reqmask_set(&current_reqmask, REQUIREMENT_KEY);
     }
+    if (*ap_ram.sram_pendants & 0x01) {
+        reqmask_set(&current_reqmask, REQUIREMENT_GREEN_PENDANT);
+    }
+    if ((*ap_ram.sram_pendants & 0x07) == 0x07) {
+        reqmask_set(&current_reqmask, REQUIREMENT_ALL_PENDANTS);
+    }
+    if ((*ap_ram.sram_crystals & 0x05) == 0x05) {
+        reqmask_set(&current_reqmask, REQUIREMENT_SIXSEVEN_CRYSTALS);
+    }
+    if ((*ap_ram.sram_crystals & 0x7F) == 0x7F) {
+        reqmask_set(&current_reqmask, REQUIREMENT_ALL_CRYSTALS);
+    }
 }
 
 void ap_req_init(struct ap_req * req) {

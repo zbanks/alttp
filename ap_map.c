@@ -76,6 +76,13 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "HC kill miniboss free Zelda",
     },
+    {
+        .start_tl = XY(0x0058, 0x0681),
+        .start_item = -1,
+        .sequence = "DDDDDD",
+        .type = SCRIPT_SEQUENCE,
+        .name = "Jump into Kak well",
+    },
     /* Need to bring old man to "door 0x30"
     {
         .start_tl = XY(0x4278, 0x1fc6),
@@ -124,6 +131,8 @@ static const struct ap_screen_info {
     { .id = 0x23a8, .name = "Blind's Basement", .add_explore_goals = true, },
     { .id = 0x22a8, .name = "Blind's Storage",},
     { .id = 0x1e40, .name = "DM Dark Cave 1",},
+    { .id = 0x2369, .name = "Fairy Fountain; Stateful!!!",},
+    { .id = 0x2140, .name = "Master Sword Pedistal", },
     // Hyrule Castle
     { .id = 0x0c48, .name = "HC Entrance", },
     { .id = 0x0e50, .name = "HC First Key", .key_doors = true, .add_explore_goals = true},
@@ -1558,9 +1567,9 @@ ap_print_map_full()
                     } else if ((xy.y % 0x200) == 8) {
                         fputc(100, mapf); fputc(50, mapf); fputc((state & 0x4) ? 255 : 20, mapf);
                     } else if ((xy.x % 0x200) == 8) {
-                        fputc(100, mapf); fputc(50, mapf); fputc((state & 0x1) ? 255 : 20, mapf);
-                    } else {
                         fputc(100, mapf); fputc(50, mapf); fputc((state & 0x2) ? 255 : 20, mapf);
+                    } else {
+                        fputc(100, mapf); fputc(50, mapf); fputc((state & 0x1) ? 255 : 20, mapf);
                     }
                     goto next_point;
                 }
@@ -1761,6 +1770,11 @@ ap_set_script(const struct ap_script * script) {
             ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = dir_mask, .joypad = SNES_MASK(UP), };
             ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = dir_mask, .joypad = 0, };
             break;
+        case 'D':
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = dir_mask, .joypad = 0, };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = dir_mask, .joypad = SNES_MASK(DOWN), };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = dir_mask, .joypad = 0, };
+            break;
         default:
             LOG("Unhandled character in sequence: '%c'", *s);
             assert_bp(false);
@@ -1890,6 +1904,10 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
     */
     if (strcmp(new_node->name, "door L 0xf0 DOOR|NODE") == 0 && new_node->screen->id == 0x1488) {
         // Door into EP stalfos room
+        new_node->_debug_blocked = true;
+    }
+    if (strcmp(new_node->name, "door 0x5e") == 0 || strcmp(new_node->name, "door 0x65") == 0) {
+        // Stateful Fairy Fountain room
         new_node->_debug_blocked = true;
     }
 
@@ -2369,9 +2387,17 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 LOG("weird id: %u %zu", id, i);
                 continue;
             }
+            if (id == 0x5e || id == 0x65) {
+                // Skip fairy fountain/Fortune teller; all doors lead to the same location and have state
+                continue;
+            }
 
             struct xy original_xy = ap_map16_to_xy(tl, ap_ram.over_ent_map16s[i]);
             new_node->tl = ap_map16_to_xy(tl, ap_ram.over_ent_map16s[i]);
+            if (id == 0x3c) {
+                // Door in a log is oddly placed
+                new_node->tl.x -= 0x08;
+            }
             new_node->tl.y += 16;
             new_node->br = XYOP1(new_node->tl, + 15);
             new_node->type = NODE_TRANSITION;
