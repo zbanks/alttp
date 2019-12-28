@@ -19,6 +19,8 @@
     - May not be important once the whole map exists
 * Avoid bomb explosions
 * Indoor overlays
+* DONE: Reset chest states on importing maps
+    - Read from SRAM
 * Re-enable jumping down ledges in the overworld
     - Fix ledge zones
     - Need to jump down ledge to get through dark cave to death mountain

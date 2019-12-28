@@ -30,7 +30,9 @@ static bool ap_new_goals = true;
 void
 ap_print_goals()
 {
-    printf("Goal list: (current index=%#x)\n", XYMAPSCREEN(ap_link_xy()));
+    FILE * f = fopen("goals.txt", "w+");
+    assert(f != NULL);
+    fprintf(f, "Goal list: (current index=%#x)\n", XYMAPSCREEN(ap_link_xy()));
     int max_score = GOAL_SCORE_GT_LIMIT;
     for (struct ap_goal * goal = ap_goal_list->next; goal != ap_goal_list; goal = goal->next) {
         int score = ap_goal_score(goal, max_score);
@@ -46,25 +48,33 @@ ap_print_goals()
             max_score = MIN(score, max_score);
             snprintf(score_str, sizeof(score_str), TERM_BLUE("%5d"), score);
         }
-        printf("    " TERM_BOLD("*") " %s " PRIGOAL, score_str, PRIGOALF(goal));
+        fprintf(f, "    " TERM_BOLD("*") " %s " PRIGOAL, score_str, PRIGOALF(goal));
         if (goal->type == GOAL_EXPLORE) {
             if (goal->node != NULL && goal->node->adjacent_node != NULL) {
-                printf(" to %s %p", goal->node->adjacent_node->name, goal->node);
+                fprintf(f, " to %s %p", goal->node->adjacent_node->name, goal->node);
             } else {
-                printf(" to umapped %p", goal->node);
+                fprintf(f, " to umapped %p", goal->node);
             }
         } else {
             if (goal->node != NULL && goal->node->screen != NULL) {
-                printf(" on %s", goal->node->screen->name);
+                fprintf(f, " on %s", goal->node->screen->name);
             }
         }
         char reqbuf[4096];
         ap_req_print(&goal->req, reqbuf);
-        printf(" Needs: %s", reqbuf);
-        printf("\n");
+        fprintf(f, " Needs: %s", reqbuf);
+        fprintf(f, "\n");
         
     }
-    printf("\n");
+    fprintf(f, "\n");
+    fflush(f);
+    rewind(f);
+    static char buf[4096];
+    size_t rc;
+    while ((rc = fread(buf, 1, sizeof(buf), f)) > 0) {
+        fwrite(buf, 1, rc, stdout);
+    }
+    fclose(f);
 }
 
 static struct ap_goal *
@@ -554,8 +564,12 @@ ap_goal_score(struct ap_goal * goal, int max_score)
             return GOAL_SCORE_COMPLETE;
         }
         break;
-    case GOAL_CHEST:
-        if (ap_map_attr(XYOP2(goal->node->tl, -, XY(0, 16))) == 0x27) {
+    case GOAL_CHEST:;
+        uint8_t attr = goal->node->tile_attr;
+        assert(attr >= 0x58 && attr <= 0x5D);
+        assert(goal->node->screen->dungeon_room != (uint16_t) -1);
+        uint16_t room_state = ap_ram.sram_room_state[goal->node->screen->dungeon_room];
+        if (room_state & (1 << (attr - 0x58 + 4))) {
             return GOAL_SCORE_COMPLETE;
         }
         break;

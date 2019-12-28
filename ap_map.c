@@ -646,8 +646,11 @@ ap_follow_targets(uint16_t * joypad)
     }
 
     if (!XYIN(link, ap_target_screen->tl, ap_target_screen->br)) {
-        LOG("Link left the screen!");
-        assert_bp(false);
+        LOGB("Link left the screen!");
+
+        static int leave_count = 0;
+        leave_count++;
+        assert_bp(leave_count % 32 != 0);
         return RC_FAIL;
     }
 
@@ -1539,6 +1542,32 @@ ap_print_map_full()
             if (screen != NULL) {
                 tile_attr = ap_map_attr(xy);
             }
+            if (screen != NULL && (xy.y % 0x100) == 8 && (xy.x % 0x100) == 8) {
+                if (screen->dungeon_room != (uint16_t) -1) {
+                    uint16_t state = ap_ram.sram_room_state[screen->dungeon_room];
+                    //LOG("Room: %#6x State: %#6x", screen->dungeon_room, state);
+                    if ((xy.y % 0x200) == 8 && (xy.x % 0x200) == 8) {
+                        fputc(100, mapf); fputc(50, mapf); fputc((state & 0x8) ? 255 : 20, mapf);
+                    } else if ((xy.y % 0x200) == 8) {
+                        fputc(100, mapf); fputc(50, mapf); fputc((state & 0x4) ? 255 : 20, mapf);
+                    } else if ((xy.x % 0x200) == 8) {
+                        fputc(100, mapf); fputc(50, mapf); fputc((state & 0x1) ? 255 : 20, mapf);
+                    } else {
+                        fputc(100, mapf); fputc(50, mapf); fputc((state & 0x2) ? 255 : 20, mapf);
+                    }
+                    goto next_point;
+                }
+            }
+            if (screen != NULL && (xy.y % 0x200) == 16 && (xy.x % 0x200) < (8 * 13)) {
+                uint16_t state = ap_ram.sram_room_state[screen->dungeon_room];
+                uint8_t bit = (xy.x % 0x200) / 8;
+                if (bit > 0 && screen->dungeon_room != (uint16_t) -1) {
+                    fputc(100, mapf);
+                    fputc((state & (1 << (15 - bit))) ? 255 : 20, mapf);
+                    fputc(20, mapf);
+                    goto next_point;
+                }
+            }
             if (XYIN(xy, link_tl, link_br)) {
                 fputc(0, mapf);
                 fputc(128, mapf);
@@ -1849,7 +1878,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
         }
     }
     */
-    if (strcmp(new_node->name, "door L 0xf0 DOOR|NODE") && new_node->screen->id == 0x1488) {
+    if (strcmp(new_node->name, "door L 0xf0 DOOR|NODE") == 0 && new_node->screen->id == 0x1488) {
         // Door into EP stalfos room
         new_node->_debug_blocked = true;
     }
@@ -2067,6 +2096,7 @@ ap_update_map_screen(bool force)
             screen->tl = cell_tl;
             screen->br = cell_br;
             screen->id = (screen->tl.x >> 8) | (screen->tl.y & 0xFF00);
+            screen->dungeon_room = indoors ? *ap_ram.dungeon_room : -1;
             const char * suffix = "";
             if (XYINDOORS(screen->tl)) {
                 if (XYONUPPER(screen->tl)) {
@@ -2459,7 +2489,9 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             new_node->tl = new_node->br = XY(0, 0);
             for (int i = 0; i < 4; i++) {
                 struct xy xy2 = XYOP2(xy, +, ds[i]);
-                if (ap_map_attr(xy2) == attr) {
+                uint8_t attr2 = ap_map_attr(xy2);
+                if (attr2 == attr ||
+                    ((ap_tile_attrs[attr2] & TILE_ATTR_MERG) && (ap_tile_attrs[attr] & TILE_ATTR_MERG))) {
                     new_node->tl = XYFN2(MIN, xy, xy2);
                     new_node->br = XYFN2(MAX, xy, xy2);
                     new_node->br = XYOP1(new_node->br, + 7);
@@ -2696,6 +2728,12 @@ ap_map_import(const char * filename) {
             int rc = sscanf(line, ">0x%hx 0x%hx,0x%hx 0x%hx,0x%hx",
                 &screen->id, &screen->tl.x, &screen->tl.y, &screen->br.x, &screen->br.y);
             assert_bp(rc == 5);
+            if (XYINDOORS(screen->tl)) {
+                screen->dungeon_room = (screen->tl.x - 0x4000) / 0x800;
+                screen->dungeon_room += ((screen->tl.y) / 0x200) * 16;
+            } else {
+                screen->dungeon_room = -1;
+            }
             for (const struct ap_screen_info * info = ap_screen_infos; info->id != (uint16_t) -1; info++) {
                 if (info->id == screen->id) {
                     screen->info = info;
@@ -2784,6 +2822,7 @@ ap_map_import(const char * filename) {
 void
 ap_map_tick() {
     struct ap_screen * screen = ap_update_map_screen(false);
+    assert_bp(screen->dungeon_room == (uint16_t) -1 || screen->dungeon_room == *ap_ram.dungeon_room);
     if (ap_sprites_changed) {
         ap_map_add_sprite_nodes_to_screen(screen);
         //ap_map_screen_update_distances(screen);

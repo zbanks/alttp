@@ -108,6 +108,7 @@ struct ap_screen {
     struct xy tl;
     struct xy br;
     uint16_t id;
+    uint16_t dungeon_room;
     struct ap_node node_list[1];
     const struct ap_screen_info * info;
     char name[64];

@@ -202,16 +202,16 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x2f] = TILE_ATTR_LDGE, // down right
 
     // Door transitions, unsure how to handle, see 0x8e & 0x8f
-    [0x30] = 0, // TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_MERG,
-    [0x31] = 0,
-    [0x32] = 0,
-    [0x33] = 0,
-    [0x34] = 0, // TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_MERG,
-    [0x35] = 0,
-    [0x36] = 0,
-    [0x37] = 0,
-    [0x38] = 0,
-    [0x39] = 0,
+    [0x30] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x31] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x32] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x33] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x34] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x35] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x36] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x37] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x38] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x39] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
 
     [0x3d] = TILE_ATTR_WALK, // in-room stairs that do not change BG
     [0x3e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs ^-shaped
@@ -236,8 +236,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x5B] = TILE_ATTR_NODE | TILE_ATTR_CHST,
     [0x5C] = TILE_ATTR_NODE | TILE_ATTR_CHST,
     [0x5D] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x5E] = TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_STRS, // stairs up
-    [0x5F] = TILE_ATTR_NODE | TILE_ATTR_WALK | TILE_ATTR_STRS, // stairs down
+    [0x5E] = TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs up
+    [0x5F] = TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs down
 
     // Special pots or pushable blocks in a room
     [0x70] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
