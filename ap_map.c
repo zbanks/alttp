@@ -130,6 +130,7 @@ static const struct ap_screen_info {
     { .id = 0x0f50, .name = "HC Walkway", .include_borders = true, },
     { .id = 0x0f48, .name = "HC Green Guard"},
     { .id = 0x1040, .name = "HC Zelda Jail"},
+    { .id = 0x0650, .name = "Sewer Key Door", .key_doors = true, },
     // Eastern Palace
     { .id = 0x1988, .name = "EP Entrance", },
     { .id = 0x1888, .name = "EP Hall 1", },
@@ -903,8 +904,8 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 state[y][x].tile_attrs = tile;
                 state[y][x].raw_tile = raw_tile;
                 uint8_t ledge_mask = 0;
-                if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
-                //if (tile & (TILE_ATTR_WALK)) {
+                //if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
+                if (tile & (TILE_ATTR_WALK)) {
                     cost = 0;
                 } else if (tile & TILE_ATTR_LDGE) {
                     cost = (1 << 20); // calculated at search time
@@ -932,8 +933,9 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                             state[y-1][x+1].corner = CORNER_AR;
                         }
                     }
-                } else if (XYIN(mapxy, destination_tl, destination_br)) {
-                    cost = 0;
+                // XXX This was correct; but it breaks caching
+                //} else if (XYIN(mapxy, destination_tl, destination_br)) {
+                //    cost = 0;
                 } else if (raw_tile == 0x1C) {
                     cost = 1000;
                 } else {
@@ -941,9 +943,12 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 }
 
                 state[y-0][x-0].cost += cost;
-                state[y-0][x-1].cost += cost;
-                state[y-1][x-0].cost += cost;
-                state[y-1][x-1].cost += cost;
+                // Weird hack to prevent cutting off doors & stairs
+                if ((tile & (TILE_ATTR_DOOR | TILE_ATTR_STRS)) == 0) {
+                    state[y-0][x-1].cost += cost;
+                    state[y-1][x-0].cost += cost;
+                    state[y-1][x-1].cost += cost;
+                }
 
                 //state[y+1][x+1].ledge |= ledge_mask;
                 //state[y+1][x-0].ledge |= ledge_mask;
@@ -1161,7 +1166,9 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                     step_cost = MAX(step_cost, state[neighbor.y][node.x].cost);
                     step_cost = MAX(step_cost, state[node.y][neighbor.x].cost);
                 }
-                gscore += step_cost;
+                if (!XYIN(neighbor, dst_tl, XYOP1(dst_br, -1))) {
+                    gscore += step_cost;
+                }
             }
             if (gscore >= (1 << 20))
                 continue;
@@ -1672,6 +1679,9 @@ ap_pathfind_node(struct ap_node * node, bool commit, int max_distance)
         br = XYOP2(br, +, offset);
     }
     */
+    if (ap_node_islocked(node)) {
+        return -1;
+    }
     struct xy link = ap_link_xy();
     return ap_pathfind_global(link, node, commit, max_distance);
 }
@@ -2554,6 +2564,9 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                         new_node->adjacent_direction = DIR_L;
                     }
                 }
+                struct xy dxy = XYOP1(dir_dxy[new_node->adjacent_direction], * -24);
+                new_node->tl = XYOP2(new_node->tl, +, dxy);
+                new_node->br = XYOP2(new_node->br, +, dxy);
 
                 snprintf(new_node->name, sizeof new_node->name, "door %s 0x%02x %s", dir_names[new_node->adjacent_direction], attr, attr_name);
             } else if (ap_tile_attrs[attr] & TILE_ATTR_CHST) {
@@ -2648,25 +2661,18 @@ bool
 ap_node_islocked(struct ap_node * node) {
     if (node->type != NODE_TRANSITION)
         return false;
-    if (ap_update_map_screen(false) != node->screen)
-        return false;
-    if (!*ap_ram.room_trap_doors) return false;
-    if (node->screen->info != NULL) {
-        if (node->screen->info->key_doors && *ap_ram.dungeon_current_keys > 0) {
-            return false;
-        }
-    }
 
-    // Overworld overlays (bombable walls)
-    if (node->lock_node != NULL && node->lock_node->type == NODE_OVERLAY) {
-        return !(ap_ram.sram_overworld_state[node->lock_node->overlay_index] & 0x02);
+    if (node->screen->info != NULL) {
+        if (node->screen->info->key_doors) {
+            return *ap_ram.dungeon_current_keys == 0;
+        }
     }
 
     uint8_t tile_attr_tl = ap_map_attr(node->tl);
     uint8_t tile_attr_br = ap_map_attr(node->br);
-    if ((tile_attr_tl & 0xF0) == 0xF0 || (tile_attr_br & 0xF0) == 0xF0) {
-        // Just-in-time assign switch unlock nodes
+    if ((tile_attr_tl & 0xF0) == 0xF0 || (tile_attr_br & 0xF0) == 0xF0 || (node->tile_attr & 0xF0) == 0xF0) {
         if (node->lock_node == NULL) {
+            // Just-in-time assign switch unlock nodes
             for (struct ap_node * sw_node = node->screen->node_list->next; sw_node != node->screen->node_list; sw_node = sw_node->next) {
                 if (sw_node->type == NODE_SWITCH) {
                     LOGB("Assigning switch %s to unlock door %s", sw_node->name, node->name);
@@ -2675,9 +2681,22 @@ ap_node_islocked(struct ap_node * node) {
                 }
             }
         }
-
-        return true;
+        if (*ap_ram.room_trap_doors) {
+            return true;
+        }
+        return node->lock_node == NULL;
     }
+
+    // Overworld overlays (bombable walls)
+    if (node->lock_node != NULL && node->lock_node->type == NODE_OVERLAY) {
+        return !(ap_ram.sram_overworld_state[node->lock_node->overlay_index] & 0x02);
+    }
+
+
+    if (ap_update_map_screen(false) != node->screen) {
+        return false;
+    }
+
     return false;
 }
 

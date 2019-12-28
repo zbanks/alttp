@@ -182,8 +182,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x1c] = TILE_ATTR_WALK, // open below?
     // XXX how do these work; how are they different than 0x3X
     [0x1d] = TILE_ATTR_WALK, // stairs?
-    [0x1e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
-    [0x1f] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
+    [0x1e] = TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
+    [0x1f] = TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
 
     [0x22] = TILE_ATTR_WALK,
     [0x23] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button 0x8000
@@ -214,8 +214,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x39] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
 
     [0x3d] = TILE_ATTR_WALK, // in-room stairs that do not change BG
-    [0x3e] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs ^-shaped
-    [0x3f] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
+    [0x3e] = TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs ^-shaped
+    [0x3f] = TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
 
     [0x40] = TILE_ATTR_WALK,
     [0x48] = TILE_ATTR_WALK,
@@ -437,7 +437,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x13] = SPRITE_ATTR_ENMY, // Helmasaur?
     [0x14] = SPRITE_ATTR_BLKF, // Gargoyles Domain Gate
     [0x15] = SPRITE_ATTR_ENMY, // Fire Faery
-    [0x16] = SPRITE_ATTR_BLKS | SPRITE_ATTR_TALK | SPRITE_ATTR_NODE, // Sahashrala / Aginah, sage of the desert
+    [0x16] = SPRITE_ATTR_BLKS | SPRITE_ATTR_SUBT, // Sahashrala / Aginah, sage of the desert
     [0x17] = SPRITE_ATTR_ENMY, // Water Bubbles?
     [0x18] = SPRITE_ATTR_ENMY, // Moldorm
     [0x19] = SPRITE_ATTR_ENMY, // Poe
@@ -681,9 +681,11 @@ struct ap_sprite_subtype {
 };
 
 static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
+    { .type = 0x16, .subtype = 0x0000, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE }, // Sahashrala
+    { .type = 0x16, .subtype = 0x0100, .attrs = 0 }, // Desert Sage
+    { .type = 0x73, .subtype = 0x0000, .attrs = SPRITE_ATTR_BLKF }, // Barrier in Sanctuary
     { .type = 0x73, .subtype = 0x0100, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE }, // Link's Uncle
     { .type = 0x73, .subtype = 0x0200, .attrs = SPRITE_ATTR_BLKF }, // Guy next to Zelda
-    { .type = 0x73, .subtype = 0x0000, .attrs = SPRITE_ATTR_BLKF }, // Barrier in Sanctuary
 };
 
 // module_index

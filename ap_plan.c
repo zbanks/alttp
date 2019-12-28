@@ -654,6 +654,7 @@ static void
 ap_goal_fail(struct ap_goal * goal)
 {
     assert(goal != NULL);
+    assert_bp(false);
     LOG(TERM_BOLD("Failed goal: ") TERM_RED(PRIGOAL), PRIGOALF(goal));
     goal->attempts++;
     if (goal->attempts > 3) {
