@@ -34,6 +34,8 @@ void ap_req_print(const struct ap_req * req, char *buf);
     X(0, ALL_PENDANTS) \
     X(0, SIXSEVEN_CRYSTALS) \
     X(0, ALL_CRYSTALS) \
+    X(0, GLOVES_1) \
+    X(0, GLOVES_2) \
 
 enum ap_requirement {
 #define X(i, n) CONCAT(REQUIREMENT_, n),

@@ -27,8 +27,11 @@ static struct ap_task _ap_task_list = {.next = &_ap_task_list, .prev = &_ap_task
 struct ap_task * ap_task_list = &_ap_task_list;
 static bool ap_new_goals = true;
 
+static int ap_goal_count[_GOAL_TYPE_MAX];
+static int ap_goal_completed[_GOAL_TYPE_MAX];
+
 void
-ap_print_goals()
+ap_print_goals(bool no_limit)
 {
     FILE * f = fopen("goals.txt", "w+");
     assert(f != NULL);
@@ -45,7 +48,9 @@ ap_print_goals()
         } else if (score == GOAL_SCORE_GT_LIMIT) {
             snprintf(score_str, sizeof(score_str), TERM_BLUE("limit"));
         } else {
-            max_score = MIN(score, max_score);
+            if (!no_limit) {
+                max_score = MIN(score, max_score);
+            }
             snprintf(score_str, sizeof(score_str), TERM_BLUE("%5d"), score);
         }
         fprintf(f, "    " TERM_BOLD("*") " %s " PRIGOAL, score_str, PRIGOALF(goal));
@@ -64,8 +69,16 @@ ap_print_goals()
         ap_req_print(&goal->req, reqbuf);
         fprintf(f, " Needs: %s", reqbuf);
         fprintf(f, "\n");
-        
     }
+    fprintf(f, "\n");
+    fprintf(f, "Stats: ");
+    for (int i = 0; i < _GOAL_TYPE_MAX; i++) {
+        fprintf(f, "%s %d/%d", ap_goal_type_names[i], ap_goal_completed[i], ap_goal_count[i]);
+        if (i != _GOAL_TYPE_MAX - 1) {
+            fprintf(f, ", ");
+        }
+    }
+
     fprintf(f, "\n");
     fflush(f);
     rewind(f);
@@ -130,6 +143,9 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
         if (attrs & TILE_ATTR_BONK) {
             ap_req_require(&goal->req, 0, REQUIREMENT_BOOTS);
         }
+        if (node->tile_attr == 0x55) {
+            ap_req_require(&goal->req, 0, REQUIREMENT_GLOVES_1);
+        }
         if (strcmp(node->name, "door 0x24") == 0) {
             // Castle door to Agahnim
             ap_req_require(&goal->req, 0, REQUIREMENT_MASTER_SWORD);
@@ -139,6 +155,7 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
             ap_req_require(&goal->req, 0, REQUIREMENT_BOOK);
         }
     }
+    ap_goal_count[goal->type]++;
     return goal;
 }
 
@@ -210,7 +227,10 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
 {
     int rc;
     struct ap_screen * screen = ap_update_map_screen(false);
-    if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node)) {
+    bool unlockable = false;
+    if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node, &unlockable)) {
+        if (!unlockable)
+            return RC_FAIL;
         if (task->node->lock_node == NULL)
             return RC_FAIL;
 
@@ -231,8 +251,14 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             new_task->node = task->node->lock_node;
             snprintf(new_task->name, sizeof new_task->name, "goto bomb %s", task->node->name);
         } else {
-            // Prepend an unlock task
             struct ap_task * new_task = ap_task_prepend(); 
+            if (task->type != TASK_GOTO_POINT) {
+                new_task->type = TASK_GOTO_POINT;
+                new_task->node = task->node;
+                snprintf(new_task->name, sizeof new_task->name, "goto %s", task->node->name);
+                new_task = ap_task_prepend(); 
+            }
+            // Prepend an unlock task
             new_task->type = TASK_GOTO_POINT;
             new_task->node = task->node->lock_node;
             snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
@@ -654,6 +680,7 @@ ap_goal_complete(struct ap_goal * goal)
     default:
         break;
     }
+    ap_goal_completed[goal->type]++;
 
     LL_EXTRACT(goal);
     //ap_graph_mark_done(&goal->graph);
@@ -684,7 +711,7 @@ ap_goal_evaluate()
     ap_update_map_screen(true);
     if (ap_active_goal == NULL && !ap_new_goals)
         return;
-    ap_print_goals();
+    ap_print_goals(false);
 
 retry_new_goal:;
     int min_score = INT_MAX;

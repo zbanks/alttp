@@ -65,6 +65,12 @@ void ap_req_update() {
     if ((*ap_ram.sram_crystals & 0x7F) == 0x7F) {
         reqmask_set(&current_reqmask, REQUIREMENT_ALL_CRYSTALS);
     }
+    if (*ap_ram.inventory_gloves >= 1) {
+        reqmask_set(&current_reqmask, REQUIREMENT_GLOVES_1);
+    }
+    if (*ap_ram.inventory_gloves >= 2) {
+        reqmask_set(&current_reqmask, REQUIREMENT_GLOVES_2);
+    }
 }
 
 void ap_req_init(struct ap_req * req) {

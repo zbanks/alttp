@@ -125,8 +125,15 @@ bool ap_manual_mode;
     X(ignore_sprites,       uint8_t,   0x7E037B)   \
     X(sram_room_state,      uint16_t,  0x7EF000)   \
     X(sram_overworld_state, uint8_t,   0x7EF280)   \
+    X(sram_goal_rupees,     uint16_t,  0x7EF360)   \
+    X(sram_actual_rupees,   uint16_t,  0x7EF362)   \
     X(sram_pendants,        uint8_t,   0x7EF374)   \
     X(sram_crystals,        uint8_t,   0x7EF37A)   \
+    X(sram_dungeon_keys,    uint8_t,   0x7EF37C)   \
+    X(sram_progress1,       uint8_t,   0x7EF3C5)   \
+    X(sram_progress2,       uint8_t,   0x7EF3C6)   \
+    X(sram_progress3,       uint8_t,   0x7EF3C9)   \
+    X(sram_tagalong,        uint8_t,   0x7EF3CC)   \
     X(inventory_base,       uint8_t,   0x7EF33F)   \
     X(inventory_bombs,      uint8_t,   0x7EF343)   \
     X(inventory_gloves,     uint8_t,   0x7EF354)   \
@@ -238,8 +245,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x5B] = TILE_ATTR_NODE | TILE_ATTR_CHST,
     [0x5C] = TILE_ATTR_NODE | TILE_ATTR_CHST,
     [0x5D] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x5E] = TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs up
-    [0x5F] = TILE_ATTR_NODE | TILE_ATTR_STRS, // stairs down
+    [0x5E] = TILE_ATTR_NODE | TILE_ATTR_DOOR, // stairs up
+    [0x5F] = TILE_ATTR_NODE | TILE_ATTR_DOOR, // stairs down
 
     // Special pots or pushable blocks in a room
     [0x70] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
@@ -259,22 +266,22 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x7E] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
     [0x7F] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
 
-    [0x80] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // open door?
-    [0x81] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x82] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // lockable door?
-    [0x83] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x84] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x85] = TILE_ATTR_WALK | TILE_ATTR_DOOR, // locked door?
-    [0x86] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x87] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x88] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x89] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x8A] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x8B] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x8C] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x8D] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x8E] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
-    [0x8F] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x80] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR, // open door?
+    [0x81] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x82] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR, // lockable door?
+    [0x83] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x84] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x85] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR, // locked door?
+    [0x86] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x87] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x88] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x89] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x8A] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x8B] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x8C] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x8D] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x8E] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x8F] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
 
     [0x90] = TILE_ATTR_WALK,
     [0x91] = TILE_ATTR_WALK,
@@ -413,7 +420,7 @@ void ap_sprites_update();
 extern const char * const ap_sprite_attr_names[];
 const char * ap_sprite_attr_name(uint16_t attr);
 void ap_sprites_print();
-uint16_t ap_sprite_attrs_for_type(uint8_t type, uint16_t subtype);
+uint16_t ap_sprite_attrs_for_type(uint8_t type, uint16_t subtype, uint16_t dungeon_room);
 
 static const uint16_t ap_sprite_attrs[256] = {
     [0x00] = SPRITE_ATTR_ENMY, // Raven
@@ -439,7 +446,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x13] = SPRITE_ATTR_ENMY, // Helmasaur?
     [0x14] = SPRITE_ATTR_BLKF, // Gargoyles Domain Gate
     [0x15] = SPRITE_ATTR_ENMY, // Fire Faery
-    [0x16] = SPRITE_ATTR_BLKS | SPRITE_ATTR_SUBT, // Sahashrala / Aginah, sage of the desert
+    [0x16] = SPRITE_ATTR_SUBT, // Sahashrala / Aginah, sage of the desert
     [0x17] = SPRITE_ATTR_ENMY, // Water Bubbles?
     [0x18] = SPRITE_ATTR_ENMY, // Moldorm
     [0x19] = SPRITE_ATTR_ENMY, // Poe
@@ -459,7 +466,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x26] = SPRITE_ATTR_ENMY, // Charging Octopi?
     [0x27] = SPRITE_ATTR_ENMY, // Dead Rocks? (Gorons bleh)
     [0x28] = SPRITE_ATTR_BLKF, // Shrub Guy who talks about Triforce / Other storytellers
-    [0x29] = SPRITE_ATTR_BLKF, // Blind Hideout attendant
+    [0x29] = SPRITE_ATTR_BLKS, // Blind Hideout attendant, Lost woods
     [0x2A] = SPRITE_ATTR_BLKS, // Sweeping Lady
     [0x2B] = SPRITE_ATTR_BLKS, // Bum under the bridge + smoke and other effects like the fire
     [0x2C] = SPRITE_ATTR_BLKF, // Lumberjack Bros. 
@@ -583,7 +590,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x9C] = SPRITE_ATTR_ENMY, // Black sperm looking things
     [0x9D] = SPRITE_ATTR_ENMY, // Black sperm looking things
     [0x9E] = 0, // The ostrich animal w/ the flute boy?
-    [0x9F] = SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Flute
+    [0x9F] = 0, //SPRITE_ATTR_ITEM | SPRITE_ATTR_NODE, // Flute
     
     [0xA0] = 0, // Birds w/ the flute boy?
     [0xA1] = SPRITE_ATTR_ENMY, // Ice man
@@ -680,14 +687,22 @@ struct ap_sprite_subtype {
     uint8_t type;
     uint16_t subtype;
     uint16_t attrs;
+    uint16_t only_dungeon_room;
 };
 
 static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
-    { .type = 0x16, .subtype = 0x0000, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE }, // Sahashrala
-    { .type = 0x16, .subtype = 0x0100, .attrs = 0 }, // Desert Sage
-    { .type = 0x73, .subtype = 0x0000, .attrs = SPRITE_ATTR_BLKF }, // Barrier in Sanctuary
-    { .type = 0x73, .subtype = 0x0100, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE }, // Link's Uncle
-    { .type = 0x73, .subtype = 0x0200, .attrs = SPRITE_ATTR_BLKS }, // Guy next to Zelda
+    // Sahashrala
+    { .type = 0x16, .subtype = 0x0000, .attrs = SPRITE_ATTR_BLKF | SPRITE_ATTR_TALK | SPRITE_ATTR_NODE },
+    // Desert Sage
+    { .type = 0x16, .subtype = 0x0100, .attrs = SPRITE_ATTR_BLKF },
+
+    // Barrier in Sanctuary
+    { .type = 0x73, .subtype = 0x0000, .only_dungeon_room = 0x12, .attrs = SPRITE_ATTR_BLKF },
+    { .type = 0x73, .subtype = 0x0100, .only_dungeon_room = 0x12, .attrs = SPRITE_ATTR_BLKF },
+    // Link's Uncle
+    { .type = 0x73, .subtype = 0x0100, .only_dungeon_room = 0x55, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE},
+    // Guy next to Zelda
+    { .type = 0x73, .subtype = 0x0200, .attrs = SPRITE_ATTR_BLKS },
 };
 
 // module_index

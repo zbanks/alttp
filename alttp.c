@@ -28,7 +28,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     static bool has_imported = false;
     if (!has_imported) {
         LOG("importing");
-        ap_map_import("map.10.txt");
+        ap_map_import("map.11.txt");
         //ap_map_import("map_state.5.00019532.txt");
         //ap_map_import("map_state.7.00021016.txt");
         has_imported = true;

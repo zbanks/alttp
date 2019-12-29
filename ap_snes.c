@@ -80,12 +80,15 @@ AP_RAM_LIST
 }
 
 uint16_t
-ap_sprite_attrs_for_type(uint8_t type, uint16_t subtype)
+ap_sprite_attrs_for_type(uint8_t type, uint16_t subtype, uint16_t dungeon_room)
 {
     uint16_t attrs = ap_sprite_attrs[type];
     if (attrs & SPRITE_ATTR_SUBT) {
         for (size_t i = 0; i < ARRAYLEN(ap_sprite_subtypes); i++) {
             const struct ap_sprite_subtype *st= &ap_sprite_subtypes[i];
+            if (st->only_dungeon_room != 0 && dungeon_room != st->only_dungeon_room) {
+                continue;
+            }
             if (st->type == type && st->subtype == subtype) {
                 return st->attrs;
             }
@@ -120,18 +123,7 @@ ap_sprites_update() {
         sprite->interaction = ap_ram.sprite_interaction[i];
         sprite->hp = ap_ram.sprite_hp[i];
 
-        uint16_t attrs = ap_sprite_attrs[sprite->type];
-        if (attrs & SPRITE_ATTR_SUBT) {
-            for (size_t i = 0; i < ARRAYLEN(ap_sprite_subtypes); i++) {
-                const struct ap_sprite_subtype * st= &ap_sprite_subtypes[i];
-                if (st->type == sprite->type && st->subtype == sprite->subtype) {
-                    attrs = st->attrs;
-                    break;
-                }
-            }
-            attrs &= ~SPRITE_ATTR_SUBT;
-        }
-        sprite->attrs = attrs;
+        sprite->attrs = ap_sprite_attrs_for_type(sprite->type, sprite->subtype, *ap_ram.dungeon_room);
 
         switch (sprite->type) {
             // Guard-like sprites

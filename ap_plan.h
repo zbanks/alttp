@@ -15,6 +15,7 @@ enum ap_goal_type {
 #define X(type) CONCAT(GOAL_, type),
 AP_GOAL_TYPE_LIST
 #undef X
+    _GOAL_TYPE_MAX
 };
 
 extern const char * const ap_goal_type_names[];
@@ -49,7 +50,7 @@ ap_goal_from_graph(struct ap_graph * graph) {
 #define PRIGOALF(g) ap_goal_type_names[(g)->type], PRINODEF((g)->node)
 
 void
-ap_print_goals();
+ap_print_goals(bool no_limit);
 
 struct ap_goal *
 ap_goal_add(enum ap_goal_type type, struct ap_node * node);

@@ -26,3 +26,5 @@
     - Need to jump down ledge to get through dark cave to death mountain
 * Handle fairy fountains (door 0x5e to screen 0x2369) -- stateful
     - Also fortune tellers, 0x65
+    - For now, blocked
+* Eastern Palace has a bunch of weird task failures around unlocking doors
