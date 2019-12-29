@@ -76,6 +76,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "HC kill miniboss free Zelda",
     },
+    /*
     {
         .start_tl = XY(0x0058, 0x0681),
         .start_item = -1,
@@ -83,6 +84,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_SEQUENCE,
         .name = "Jump into Kak well",
     },
+    */
     {
         .start_tl = XY(0x5a78, 0x25c0),
         .start_item = -1,
@@ -139,7 +141,7 @@ static const struct ap_screen_info {
     { .id = 0x22a8, .name = "Blind's Storage",},
     { .id = 0x1e40, .name = "DM Dark Cave 1",},
     { .id = 0x2369, .name = "Fairy Fountain; Stateful!!!",},
-    { .id = 0x2140, .name = "Master Sword Pedistal", },
+    { .id = 0x2140, .name = "Master Sword Pedestal", },
     // Hyrule Castle
     { .id = 0x0c48, .name = "HC Entrance", },
     { .id = 0x0e50, .name = "HC First Key", .key_doors = true, .add_explore_goals = true},
@@ -423,6 +425,25 @@ ap_map16_to_xy(struct xy tl, uint16_t map16)
     return xy;
 }
 
+struct xy
+ap_tilemap_to_xy(struct xy tl, uint16_t tilemap) 
+{
+    assert_bp(XYINDOORS(tl));
+    assert_bp(tilemap < 0x4000);
+    // TODO: What do bits 0x0040 and 0x0001 do?
+    //assert_bp((tilemap & 0x0041) == 0);
+
+    struct xy xy = XYOP1(tl, &~0x1FF);
+    if (tilemap & 0x2000) {
+        xy = XYTOLOWER(xy);
+    } else {
+        xy = XYTOUPPER(xy);
+    }
+    xy.x += ((tilemap & 0x007E) << 2) + 8;
+    xy.y += ((tilemap & 0x1F80) >> 4) + 16;
+    return xy;
+}
+
 void
 ap_print_map_screen_pair() {
     struct xy link = ap_link_xy();
@@ -631,7 +652,6 @@ ap_follow_targets(uint16_t * joypad)
         }
 
         target = ap_targets[ap_target_count-1];
-        LOG("%x %x %zu", target.joypad_mask, joypad_mask, ap_target_count);
         if (target.joypad_mask & joypad_mask) {
             break;
         }
@@ -931,14 +951,18 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 state[y][x].tile_attrs = tile;
                 state[y][x].raw_tile = raw_tile;
                 uint8_t ledge_mask = 0;
+                uint8_t ledge_dir = DIR_NONE;
                 //if (tile & (TILE_ATTR_WALK | TILE_ATTR_DOOR)) {
                 if (tile & (TILE_ATTR_WALK)) {
+                    cost = 0;
+                } else if ((tile & TILE_ATTR_DOOR) && XYL1DIST(XY(x, y), src) <= 3) {
                     cost = 0;
                 } else if (tile & TILE_ATTR_LDGE) {
                     cost = (1 << 20); // calculated at search time
                     //cost = 0;
                     assert_bp((raw_tile &~0x7) == 0x28);
                     ledge_mask = 1ul << (raw_tile & 0x7);
+                    ledge_dir = (raw_tile & 0x7) + 1;
                 } else if (tile & lift_mask) {
                     cost = 20;
                     if (state[y][x].corner == CORNER_NONE && raw_tile != 0x55)  {
@@ -993,12 +1017,38 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                 //state[y-2][x-0].ledge |= ledge_mask;
                 //state[y-2][x-1].ledge |= ledge_mask;
                 //state[y-2][x-2].ledge |= ledge_mask;
+                // There's something particuarly thorny about 0x2D ledges (LD)
+                if (raw_tile == 0x2D) {
+                    state[y][x+1].cost += cost;
+                    state[y][x+1].ledge |= ledge_mask;
+                }
+
+                /*
+                if (ledge_dir != DIR_NONE) {
+                    if (ledge_dir == DIR_U || ledge_dir == DIR_LU || ledge_dir == DIR_RU) {
+                        state[y-2][x+0].cost += cost;
+                        state[y-2][x+0].ledge |= ledge_mask;
+                    }
+                    if (ledge_dir == DIR_D || ledge_dir == DIR_LD || ledge_dir == DIR_RD) {
+                        state[y+1][x+0].cost += cost;
+                        state[y+1][x+0].ledge |= ledge_mask;
+                    }
+                    if (ledge_dir == DIR_L || ledge_dir == DIR_LU || ledge_dir == DIR_LD) {
+                        state[y+0][x-2].cost += cost;
+                        state[y+0][x-2].ledge |= ledge_mask;
+                    }
+                    if (ledge_dir == DIR_R || ledge_dir == DIR_RU || ledge_dir == DIR_RD) {
+                        state[y+0][x+1].cost += cost;
+                        state[y+0][x+1].ledge |= ledge_mask;
+                    }
+                }
+                */
 
                 if (x < 1 || x >= grid.x - 1 ||
                     y < 1 || y >= grid.y - 1) {
                     state[y][x].cost = (1 << 20);
                 } else if (x < 3 || x >= grid.x - 3 ||
-                    y < 3 || y >= grid.y - 3) {
+                           y < 3 || y >= grid.y - 3) {
                     state[y][x].cost += 10000;
                 }
             }
@@ -1436,7 +1486,7 @@ void
 ap_print_map_graph()
 {
     FILE *graphf = NONNULL(fopen("full_map.dot", "w"));
-    fprintf(graphf, "strdigraph map {\nconcatenate=true\n");
+    fprintf(graphf, "digraph map {\nconcatenate=true\n");
     struct xy link = ap_link_xy();
     int32_t link_min_dist = INT32_MAX;
     struct ap_node * link_nearest_node = NULL;
@@ -1451,7 +1501,7 @@ ap_print_map_graph()
             struct ap_screen * screen = map_screens[XYMAPSCREEN(xy)];
             if (screen == NULL || !XYEQ(screen->tl, xy)) continue;
 
-            fprintf(graphf, "subgraph cluster_%d { color=black; label=\"%s\"\n", screen->id, screen->name);
+            fprintf(graphf, "subgraph cluster_%p { color=black; label=\"%s\"\n", screen, screen->name);
             fprintf(screenf, "s%#x [label=\"%s\" shape=\"rect\"];\n", screen->id, screen->name);
             if (XYIN(link, screen->tl, screen->br)) {
                 fprintf(screenf, "s%#x [color=\"green\"];\n", screen->id);
@@ -2015,6 +2065,7 @@ ap_screen_commit_node(struct ap_screen * screen, struct ap_node ** new_node_p)
 
         node->tl = new_node->tl;
         node->br = new_node->br;
+        node->overlay_index = new_node->overlay_index;
 
         memset(new_node, 0, sizeof *new_node);
         return node;
@@ -2303,7 +2354,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
     if (*ap_ram.inventory_gloves >= 2) lift_mask |= TILE_ATTR_LFT2;
 
     //uint16_t walk_mask = TILE_ATTR_WALK | TILE_ATTR_SWIM;
-    uint16_t walk_mask = TILE_ATTR_WALK | TILE_ATTR_DOOR;
+    uint16_t walk_mask = TILE_ATTR_WALK;
     const uint8_t dirs[4] = {
         // Top, Botton, Left, Right edges
         DIR_U, DIR_D, DIR_L, DIR_R,
@@ -2329,7 +2380,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             for (; XYIN(xy, tl, br); xy = XYOP2(xy, +, XYOP1(xy_step[k], * 8))) {
                 bool can_walk = true;
                 //if (XYINDOORS(xy) && (ap_map_attr(xy) == 0x00 || ap_map_attr(xy) == 0x1c)) {
-                if (XYINDOORS(xy) && (ap_map_attr(xy) == 0x1c)) {
+                if (XYINDOORS(xy) && (ap_map_attr_from_ram(xy) == 0x1c)) {
                     // NOTE: sometimes 0's are actually walkable
                     // inside, border 0 or 1c is just empty
                     // you could walk there, but you definitely can't get there
@@ -2337,7 +2388,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 }
                 for (int8_t j = 0; j < f + 2; j++) {
                     struct xy lxy = XYOP2(xy, -, XYOP1(dir_dxy[i], * 8 * j));
-                    if (!(ap_tile_attrs[ap_map_attr(lxy)] & masks[k])) {
+                    if (!(ap_tile_attrs[ap_map_attr_from_ram(lxy)] & masks[k])) {
                         can_walk = false;
                         break;
                     }
@@ -2346,7 +2397,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                     new_end = XYOP2(xy, -, XYOP1(dir_dxy[i], * 8 * (f + 1)));
                     for (int8_t j = f + 1; j < f + 8; j++) {
                         struct xy lxy = XYOP2(new_end, -, XYOP1(dir_dxy[i], * 8));
-                        uint8_t attr = ap_map_attr(lxy);
+                        uint8_t attr = ap_map_attr_from_ram(lxy);
                         // 0x80 through 0x9F are walkways between rooms
                         // 0xF0 through 0xF8 are locked doors?
                         if (attr < 0x80)
@@ -2378,12 +2429,12 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             new_node->br = XYOP1(new_node->br, + 7);
             new_node->type = NODE_TRANSITION;
             new_node->adjacent_direction = i;
-            new_node->tile_attr = ap_map_attr(ap_box_edge(new_node->tl, new_node->br, i));
+            new_node->tile_attr = ap_map_attr_from_ram(ap_box_edge(new_node->tl, new_node->br, i));
             new_node->locked_xy = XY(0, 0);
             if (new_node->tile_attr == 0x82 || new_node->tile_attr == 0x83) { // locked door
                 new_node->locked_xy = ap_box_edge(new_node->tl, new_node->br, dir_opp[i]);
                 new_node->locked_xy = XYOP1(new_node->locked_xy, &~7);
-                uint8_t attr = ap_map_attr(new_node->locked_xy);
+                uint8_t attr = ap_map_attr_from_ram(new_node->locked_xy);
             }
             // Skip unreachable border nodes
             if (new_node->tile_attr == 0x00 || (!XYINDOORS(link) && new_node->tile_attr == 0x48)) {
@@ -2447,7 +2498,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             new_node->br = XYOP1(new_node->tl, + 15);
             new_node->type = NODE_TRANSITION;
             //new_node->tile_attr = 0x80; // not quite true
-            new_node->tile_attr = ap_map_attr(original_xy);
+            new_node->tile_attr = ap_map_attr_from_ram(original_xy);
             struct xy entrance = XY(ap_ram.entrance_xs[id], ap_ram.entrance_ys[id]);
             //new_node->adjacent_screen = &map_screens[XYMAPSCREEN(entrance)];
             new_node->adjacent_direction = DIR_U;
@@ -2487,18 +2538,18 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
         // and add them as nodes
         for (struct xy xy = tl; xy.y < br.y; xy.y += 0x8) {
             for (xy.x = tl.x; xy.x < br.x; xy.x += 0x8) {
-                uint8_t attr = ap_map_attr(xy);
+                uint8_t attr = ap_map_attr_from_ram(xy);
                 int d = attr - 0x27;
                 if (d <= 0 || d >= 5)
                     continue;
                 // In dungeons 0x28 is used for both up & down; 0x2A for both left & right
                 // Look for the 0x1C "hole" to fall into
-                if (ap_map_attr(XYOP2(xy, + 8*, dir_dxy[d])) != 0x1C)
+                if (ap_map_attr_from_ram(XYOP2(xy, + 8*, dir_dxy[d])) != 0x1C)
                     d++;
-                if (ap_map_attr(XYOP2(xy, + 8*, dir_dxy[d])) != 0x1C)
+                if (ap_map_attr_from_ram(XYOP2(xy, + 8*, dir_dxy[d])) != 0x1C)
                     continue;
                 static const int perp_dirs[5] = {0, DIR_R, DIR_R, DIR_D, DIR_D};
-                uint8_t adj_attr = ap_map_attr(XYOP2(xy, - 8*, dir_dxy[perp_dirs[d]]));
+                uint8_t adj_attr = ap_map_attr_from_ram(XYOP2(xy, - 8*, dir_dxy[perp_dirs[d]]));
                 if (adj_attr == attr)
                     continue; // already made a node for this
                 struct xy l_tl = xy;
@@ -2507,13 +2558,13 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 int ledge_size = 0;
                 bool found_start = false;
                 for (struct xy t = xy; XYUNDER(t, br); t = XYOP2(t, + 8*, dir_dxy[perp_dirs[d]])) {
-                    uint8_t t_attr = ap_map_attr(t);
+                    uint8_t t_attr = ap_map_attr_from_ram(t);
                     if (ap_tile_attrs[t_attr] & TILE_ATTR_STRS) {
                         // If there are stairs, omit the ledge (because you can just take the stairs)
                         valid_ledge = false;
                     } else if (t_attr != attr) {
                         break;
-                    } else if (ap_tile_attrs[ap_map_attr(XYOP2(t, - 8*, dir_dxy[d]))] & TILE_ATTR_WALK) {
+                    } else if (ap_tile_attrs[ap_map_attr_from_ram(XYOP2(t, - 8*, dir_dxy[d]))] & TILE_ATTR_WALK) {
                         if (!found_start) {
                             found_start = true;
                             l_tl = t;
@@ -2549,8 +2600,8 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                     new_node->tile_attr = attr;
                     new_node->type = NODE_TRANSITION;
                     new_node->adjacent_direction = d;
-                    new_node->tl = ledge_tl;
-                    new_node->br = ledge_br;
+                    new_node->tl = XYOP2(ledge_tl, -, XYOP1(offset, * 1));
+                    new_node->br = XYOP2(ledge_br, -, XYOP1(offset, * 1));
                     new_node->adjacent_node = landing;
                     snprintf(new_node->name, sizeof new_node->name, "ledge %sx%d", dir_names[d], ledge_size);
                     ap_screen_commit_node(screen, &new_node);
@@ -2561,18 +2612,19 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             }
         }
     }
+    size_t n_doors = 0;
     for (struct xy xy = tl; xy.y < br.y; xy.y += 0x10) {
         for (xy.x = tl.x; xy.x < br.x; xy.x += 0x10) {
-            uint8_t attr = ap_map_attr(xy);
-            if (!(ap_tile_attrs[attr] & TILE_ATTR_NODE))
+            uint8_t attr = ap_map_attr_from_ram(xy);
+            if (!(ap_tile_attrs[attr] & (TILE_ATTR_NODE | TILE_ATTR_DOOR)))
                 continue;
             struct xy ds[4] = {XY(8, 8), XY(-8, -8), XY(-8, 8), XY(8, -8)};
             new_node->tl = new_node->br = XY(0, 0);
             for (int i = 0; i < 4; i++) {
                 struct xy xy2 = XYOP2(xy, +, ds[i]);
-                uint8_t attr2 = ap_map_attr(xy2);
-                if (attr2 == attr ||
-                    ((ap_tile_attrs[attr2] & TILE_ATTR_MERG) && (ap_tile_attrs[attr] & TILE_ATTR_MERG))) {
+                uint8_t attr2 = ap_map_attr_from_ram(xy2);
+                if (XYIN(xy2, tl, br) && attr2 == attr) {
+                    // || ((ap_tile_attrs[attr2] & TILE_ATTR_MERG) && (ap_tile_attrs[attr] & TILE_ATTR_MERG))) {
                     new_node->tl = XYFN2(MIN, xy, xy2);
                     new_node->br = XYFN2(MAX, xy, xy2);
                     new_node->br = XYOP1(new_node->br, + 7);
@@ -2581,6 +2633,40 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             }
             if (XYEQ(new_node->tl, new_node->br)) {
                 continue;
+            }
+            if (ap_tile_attrs[attr] & TILE_ATTR_DOOR) {
+                uint8_t attr_mask = 0xFF;
+                if (attr >= 0x80 && attr <= 0x87) {
+                    attr_mask = 0xEF;
+                } else if (attr >= 0x90 && attr <= 0x97) {
+                    continue;
+                }
+                struct xy next_tl = new_node->tl;
+                while (XYIN(next_tl, tl, br) && (ap_map_attr_from_ram(next_tl) & attr_mask) == attr) {
+                    new_node->tl = next_tl;
+                    next_tl.x -= 8;
+                }
+                next_tl = new_node->tl;
+                while (XYIN(next_tl, tl, br) && (ap_map_attr_from_ram(next_tl) & attr_mask) == attr) {
+                    new_node->tl = next_tl;
+                    next_tl.y -= 8;
+                }
+                if (xy.x - new_node->tl.x >= 0x10) {
+                    continue;
+                }
+                if (xy.y - new_node->tl.y >= 0x10) {
+                    continue;
+                }
+                struct xy next_br = new_node->br;
+                while (XYIN(next_br, tl, br) && (ap_map_attr_from_ram(next_br) & attr_mask) == attr) {
+                    new_node->br = next_br;
+                    next_br.x += 8;
+                }
+                next_br = new_node->br;
+                while (XYIN(next_br, tl, br) && (ap_map_attr_from_ram(next_br) & attr_mask) == attr) {
+                    new_node->br = next_br;
+                    next_br.y += 8;
+                }
             }
             new_node->tile_attr = attr;
             const char * attr_name = ap_tile_attr_name(attr);
@@ -2602,10 +2688,10 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                     struct xy offset = XYOP1(dir_dxy[new_node->adjacent_direction], * -24);
                     new_node->tl = XYOP2(new_node->tl, +, offset);
                     new_node->br = XYOP2(new_node->br, +, offset);
-                } else if ((ap_map_attr(XYOP2(new_node->tl, -, XY(0, 8))) & 0xF0) == 0x30) {
+                } else if ((ap_map_attr_from_ram(XYOP2(new_node->tl, -, XY(0, 8))) & 0xF0) == 0x30) {
                     // Check for 0x30 family which does a screen transition
                     new_node->adjacent_direction = DIR_U;
-                } else if ((ap_map_attr(XYOP2(new_node->tl, +, XY(0, 16))) & 0xF0) == 0x30) {
+                } else if ((ap_map_attr_from_ram(XYOP2(new_node->tl, +, XY(0, 16))) & 0xF0) == 0x30) {
                     new_node->adjacent_direction = DIR_D;
                 } else {
                     if (xy.x & 0x200) { // on upper level
@@ -2620,52 +2706,63 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 new_node->type = NODE_TRANSITION;
                 assert_bp(XYIN(new_node->tl, screen->tl, screen->br));
                 assert_bp(XYIN(new_node->br, screen->tl, screen->br));
-                uint16_t d_t = new_node->tl.y - screen->tl.y;
-                uint16_t d_l = new_node->tl.x - screen->tl.x;
-                uint16_t d_b = screen->br.y - new_node->br.y;
-                uint16_t d_r = screen->br.x - new_node->br.x;
-                assert(d_t < 0x1000 && d_l < 0x1000 && d_b < 0x1000 && d_r < 0x1000);
-                uint16_t dx = 0;
-                if (d_l < d_r) {
-                    new_node->adjacent_direction = DIR_L;
-                    dx = d_l;
+                if (attr == 0x5e || attr == 0x5f) {
+                    new_node->adjacent_direction = DIR_U;
+                    new_node->door_type = 0x80 | (attr & 0x1);
                 } else {
-                    new_node->adjacent_direction = DIR_R;
-                    dx = d_r;
-                }
-                if (d_t < d_b) {
-                    if (d_t < dx) {
-                        new_node->adjacent_direction = DIR_U;
-                    }
-                } else {
-                    if (d_b < dx) {
-                        new_node->adjacent_direction = DIR_D;
-                    }
-                }
-                /*
-                struct xy screen_center = XYMID(screen->tl, screen->br);
-                struct xy node_center = XYMID(new_node->tl, new_node->br);
-                int dx = (int) node_center.x - (int) screen_center.x;
-                int dy = (int) node_center.y - (int) screen_center.y;
-                if (ABS(dx) < ABS(dy)) {
-                    if (dy > 0) {
-                        new_node->adjacent_direction = DIR_D;
-                    } else {
-                        new_node->adjacent_direction = DIR_U;
-                    }
-                } else {
-                    if (dx > 0) {
-                        new_node->adjacent_direction = DIR_R;
-                    } else {
+                    uint16_t d_t = new_node->tl.y - screen->tl.y;
+                    uint16_t d_l = new_node->tl.x - screen->tl.x;
+                    uint16_t d_b = screen->br.y - new_node->br.y;
+                    uint16_t d_r = screen->br.x - new_node->br.x;
+                    assert(d_t < 0x1000 && d_l < 0x1000 && d_b < 0x1000 && d_r < 0x1000);
+                    uint16_t dx = 0;
+                    if (d_l < d_r) {
                         new_node->adjacent_direction = DIR_L;
+                        dx = d_l;
+                    } else {
+                        new_node->adjacent_direction = DIR_R;
+                        dx = d_r;
+                    }
+                    if (d_t < d_b) {
+                        if (d_t < dx) {
+                            new_node->adjacent_direction = DIR_U;
+                        }
+                    } else {
+                        if (d_b < dx) {
+                            new_node->adjacent_direction = DIR_D;
+                        }
+                    }
+
+                    size_t door_idx;
+                    for (door_idx = 0; door_idx < 16; door_idx++) {
+                        uint16_t door_tilemap = ap_ram.dungeon_door_tilemaps[door_idx];
+                        if (door_tilemap == 0) {
+                            continue;
+                        }
+                        struct xy door_xy = ap_tilemap_to_xy(tl, door_tilemap);
+                        if (XYIN(door_xy , new_node->tl, new_node->br)) {
+                            break;
+                        }
+                    }
+                    assert_bp(door_idx < 16);
+                    if (door_idx < 16) {
+                        uint16_t raw_door_type = ap_ram.dungeon_door_types[door_idx];
+                        uint8_t door_type = (raw_door_type & 0xFE) >> 1;
+                        //uint8_t door_direction = ((raw_door_type & 0x0600) >> 9) + 1;
+                        uint8_t door_direction = (ap_ram.dungeon_door_dirs[door_idx] & 0x3) + 1;
+                        assert_bp(new_node->adjacent_direction == door_direction);
+                        new_node->door_type = door_type;
+                        n_doors++;
+                    } else {
+                        new_node->door_type = 0xFF;
                     }
                 }
-                */
+
                 struct xy dxy = XYOP1(dir_dxy[new_node->adjacent_direction], * -24);
                 new_node->tl = XYOP2(new_node->tl, +, dxy);
                 new_node->br = XYOP2(new_node->br, +, dxy);
 
-                snprintf(new_node->name, sizeof new_node->name, "door %s 0x%02x %s", dir_names[new_node->adjacent_direction], attr, attr_name);
+                snprintf(new_node->name, sizeof new_node->name, "door %s 0x%02x %s %s", dir_names[new_node->adjacent_direction], attr, attr_name, ap_door_attr_name(new_node->door_type));
             } else if (ap_tile_attrs[attr] & TILE_ATTR_CHST) {
                 new_node->type = NODE_CHEST;
                 // Chests are opened from the bottom
@@ -2695,6 +2792,42 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             ap_screen_commit_node(screen, &new_node);
             new_node_count++;
         }
+    }
+    if (XYINDOORS(tl)) {
+        size_t n_doors2 = 0;
+        for (size_t i = 0; i < 16; i++) {
+            uint16_t raw_door_type = ap_ram.dungeon_door_types[i];
+            uint16_t door_tilemap = ap_ram.dungeon_door_tilemaps[i];
+            if (raw_door_type == 0 && door_tilemap == 0) {
+                continue;
+            }
+
+            uint8_t door_type = (raw_door_type & 0xFE) >> 1;
+            uint8_t door_direction = (ap_ram.dungeon_door_dirs[i] & 3) + 1;//((raw_door_type & 0x0600) >> 9) + 1;
+            struct xy door_xy = ap_tilemap_to_xy(tl, door_tilemap);
+            if (XYIN(door_xy, tl, br)) {
+                n_doors2++;
+            }
+            /*
+            char layer = 'n';
+            if (ap_tile_attrs[ap_map_attr_from_ram(XYTOLOWER(door_xy))] & TILE_ATTR_DOOR) {
+                if (ap_tile_attrs[ap_map_attr_from_ram(XYTOUPPER(door_xy))] & TILE_ATTR_DOOR) {
+                    layer = 'B';
+                } else {
+                    layer = 'v';
+                }
+            } else if (ap_tile_attrs[ap_map_attr_from_ram(XYTOUPPER(door_xy))] & TILE_ATTR_DOOR) {
+                layer = '^';
+            }
+            assert_bp(layer != 'n');
+            assert_bp(layer != 'B');
+            */
+            char layer = XYONLOWER(door_xy) ? 'v' : '^';
+            LOG("Door %2zu: %#06x %#x %s " PRIXY " (%#06x) %c %s",
+                i, raw_door_type, door_type, dir_names[door_direction],
+                PRIXYF(door_xy), door_tilemap, layer, ap_door_attr_name(door_type));
+        }
+        assert_bp(n_doors == n_doors2);
     }
 
 }

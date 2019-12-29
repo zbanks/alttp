@@ -86,6 +86,7 @@ NODE_TYPE_LIST
 #undef X
     } type;
     uint8_t tile_attr;
+    uint8_t door_type;
     uint8_t sprite_type;
     uint16_t sprite_subtype;
     bool _reachable;

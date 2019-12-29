@@ -8,6 +8,12 @@
 
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
+    //INFO("BOMB: %x %x %x %x %x %x", *ap_ram.bomb_w1, *ap_ram.bomb_w2, *ap_ram.bomb_w3, *ap_ram.bomb_w4, *ap_ram.bomb_w5, *ap_ram.bomb_w6);
+    INFO("DOOR: %x %x %x %x %x %x %x %x" " %x %x %x %x %x %x %x %x",
+            ap_ram.dungeon_door_types[0], ap_ram.dungeon_door_types[1], ap_ram.dungeon_door_types[2], ap_ram.dungeon_door_types[3],
+            ap_ram.dungeon_door_types[4], ap_ram.dungeon_door_types[5], ap_ram.dungeon_door_types[6], ap_ram.dungeon_door_types[7],
+            ap_ram.dungeon_door_types[8], ap_ram.dungeon_door_types[9], ap_ram.dungeon_door_types[10], ap_ram.dungeon_door_types[11],
+            ap_ram.dungeon_door_types[12], ap_ram.dungeon_door_types[13], ap_ram.dungeon_door_types[14], ap_ram.dungeon_door_types[15]);
 
     assert_bp(frame == 0 || frame == ap_frame + 1);
     ap_frame = frame;
@@ -28,7 +34,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     static bool has_imported = false;
     if (!has_imported) {
         LOG("importing");
-        ap_map_import("map.11.txt");
+        ap_map_import("map.12.txt");
         //ap_map_import("map_state.5.00019532.txt");
         //ap_map_import("map_state.7.00021016.txt");
         has_imported = true;
@@ -170,5 +176,4 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     if (frame % 2) {
         //JOYPAD_SET(A);
     }
-
 }

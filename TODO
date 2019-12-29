@@ -28,3 +28,7 @@
     - Also fortune tellers, 0x65
     - For now, blocked
 * Eastern Palace has a bunch of weird task failures around unlocking doors
+* ap_pathfind_global can "jump" through long nodes
+    - distance matrix is from center of src to any point on dst
+* Santuary north door is a mix of 0x84 & 0x94
+* Handling of 0x55 rocks; need to do lift while transitioning

@@ -143,6 +143,9 @@ bool ap_manual_mode;
     X(dungeon_current_keys, uint8_t,   0x7EF36F)   \
     X(health_current,       uint8_t,   0x7EF36D)   \
     X(health_capacity,      uint8_t,   0x7EF36C)   \
+    X(dungeon_door_types,   uint16_t,  0x7E1980)   \
+    X(dungeon_door_tilemaps,uint16_t,  0x7E19A0)   \
+    X(dungeon_door_dirs,    uint16_t,  0x7E19C0)   \
 
 extern struct ap_ram {
 #define X(name, type, offset) const type * name;
@@ -228,7 +231,7 @@ static const uint16_t ap_tile_attrs[256] = {
 
     [0x40] = TILE_ATTR_WALK,
     [0x48] = TILE_ATTR_WALK,
-    [0x4B] = TILE_ATTR_WALK | TILE_ATTR_DOOR,
+    [0x4B] = TILE_ATTR_NODE | TILE_ATTR_DOOR,
 
     [0x50] = TILE_ATTR_LFT0,
     [0x51] = TILE_ATTR_LFT0,
@@ -266,31 +269,31 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x7E] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
     [0x7F] = TILE_ATTR_NODE | TILE_ATTR_LFT0,
 
-    [0x80] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR, // open door?
-    [0x81] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x82] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR, // lockable door?
-    [0x83] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x84] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x85] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR, // locked door?
-    [0x86] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x87] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x88] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x89] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x8A] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x8B] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x8C] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x8D] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x8E] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
-    [0x8F] = /* TILE_ATTR_WALK | */ TILE_ATTR_DOOR,
+    [0x80] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR, // open door?
+    [0x81] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x82] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR, // lockable door?
+    [0x83] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x84] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x85] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR, // locked door?
+    [0x86] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x87] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x88] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x89] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x8A] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x8B] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x8C] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x8D] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x8E] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x8F] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
 
-    [0x90] = TILE_ATTR_WALK,
-    [0x91] = TILE_ATTR_WALK,
-    [0x92] = TILE_ATTR_WALK,
-    [0x93] = TILE_ATTR_WALK,
-    [0x94] = TILE_ATTR_WALK,
-    [0x95] = TILE_ATTR_WALK,
-    [0x96] = TILE_ATTR_WALK,
-    [0x97] = TILE_ATTR_WALK,
+    [0x90] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR, // open door?
+    [0x91] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x92] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR, // lockable door?
+    [0x93] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x94] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x95] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR, // locked door?
+    [0x96] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
+    [0x97] = /* TILE_ATTR_WALK | */ TILE_ATTR_NODE | TILE_ATTR_DOOR,
 
     [0xA0] = TILE_ATTR_WALK,
     [0xA1] = TILE_ATTR_WALK,
@@ -547,7 +550,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x73] = SPRITE_ATTR_SUBT, // Links Uncle / Sage / Barrier that opens in the sanctuary
     [0x74] = 0, // Red Hat Boy who runs from you
     [0x75] = SPRITE_ATTR_TALK | SPRITE_ATTR_BLKS, // Bottle Vendor
-    [0x76] = SPRITE_ATTR_FLLW, // Princess Zelda
+    [0x76] = SPRITE_ATTR_BLKF | SPRITE_ATTR_FLLW, // Princess Zelda
     [0x77] = SPRITE_ATTR_ENMY, // Also Fire Faeries (seems like a different variety)
     [0x78] = SPRITE_ATTR_BLKS, // Village Elder
     [0x79] = 0, // Good bee / normal bee
@@ -703,6 +706,63 @@ static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
     { .type = 0x73, .subtype = 0x0100, .only_dungeon_room = 0x55, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE},
     // Guy next to Zelda
     { .type = 0x73, .subtype = 0x0200, .attrs = SPRITE_ATTR_BLKS },
+};
+
+#define DOOR_ATTR_LIST \
+    X(NORM) /* Normal; just to differentiate unknown vs. unremarkable */ \
+    X(BOMB) /* Bombable */ \
+    X(SKEY) /* Openable with small key */ \
+    X(BKEY) /* Openable with big key */ \
+    X(SLSH) /* Openable with sword */ \
+    X(TRAP) /* Becomes a trap door */ \
+    X(BLOK) /* Not actually a door */ \
+
+enum {
+#define X(d) CONCAT(_DOOR_ATTR_INDEX_, d),
+DOOR_ATTR_LIST
+#undef X
+};
+enum {
+#define X(d) CONCAT(DOOR_ATTR_, d) = 1ul << CONCAT(_DOOR_ATTR_INDEX_, d),
+DOOR_ATTR_LIST
+#undef X
+};
+
+const char * ap_door_attr_name(uint16_t idx);
+
+static const uint16_t ap_door_attrs[256] = {
+    [0x00] = DOOR_ATTR_NORM,
+    [0x01] = DOOR_ATTR_NORM,
+    [0x02] = DOOR_ATTR_NORM,
+    [0x04] = DOOR_ATTR_NORM,
+    [0x05] = DOOR_ATTR_NORM,
+    [0x06] = DOOR_ATTR_NORM,
+    [0x07] = DOOR_ATTR_NORM,
+    [0x08] = DOOR_ATTR_NORM,
+    [0x09] = DOOR_ATTR_NORM,
+    [0x0A] = DOOR_ATTR_NORM,
+    [0x0B] = DOOR_ATTR_NORM,
+    [0x0C] = DOOR_ATTR_TRAP,
+    [0x0D] = DOOR_ATTR_BLOK, // ? Only in Turtle rock, "invisible"
+    [0x0E] = DOOR_ATTR_SKEY,
+    [0x0F] = DOOR_ATTR_BKEY,
+    [0x10] = DOOR_ATTR_SKEY,
+    [0x11] = DOOR_ATTR_SKEY,
+    [0x13] = DOOR_ATTR_SKEY,
+    [0x14] = DOOR_ATTR_BOMB, // Confirmed by ASM
+    [0x15] = DOOR_ATTR_BOMB, // Confirmed by ASM
+    [0x17] = DOOR_ATTR_BOMB, // Confirmed by ASM
+    [0x18] = DOOR_ATTR_NORM,
+    [0x19] = DOOR_ATTR_SLSH,
+    [0x1B] = DOOR_ATTR_TRAP, // ? 'right side only'?
+    [0x1C] = DOOR_ATTR_TRAP, // ? 'left side only'?
+    [0x20] = DOOR_ATTR_NORM,
+    [0x22] = DOOR_ATTR_TRAP, // ? 'left side only'?
+    [0x23] = DOOR_ATTR_NORM,
+    [0x24] = DOOR_ATTR_TRAP, // ? one side trap?
+    [0x25] = DOOR_ATTR_TRAP, // ? one side trap?
+    [0x80] = DOOR_ATTR_NORM, // Fake; stairs 0x0E
+    [0x81] = DOOR_ATTR_NORM, // Fake; stairs 0x0F
 };
 
 // module_index

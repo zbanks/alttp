@@ -32,6 +32,8 @@ struct xy {
 #define XYONLOWER(xy) (XYINDOORS(xy) && ((xy).x & 0x200) == 0x000)
 #define XYONUPPER(xy) (XYINDOORS(xy) && ((xy).x & 0x200) == 0x200)
 #define XYFLIPBG(xy) XY((xy).x ^ 0x200, (xy).y)
+#define XYTOLOWER(xy) XY((xy).x & ~0x200, (xy).y)
+#define XYTOUPPER(xy) XY((xy).x | 0x200, (xy).y)
 
 #define PRIXYV "(%u %#06x, %u %#06x)"
 #define PRIXYVF(xy) (xy).x, (xy).x, (xy).y, (xy).y

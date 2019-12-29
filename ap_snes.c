@@ -66,12 +66,12 @@ AP_RAM_LIST
     //ap_emu->load("well");
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
-    ap_emu->load("home");
+    //ap_emu->load("home");
     //ap_emu->load("cave_front");
     //ap_emu->load("cave");
     //ap_emu->load("hc_stairs");
     //ap_emu->load("rock");
-    //ap_emu->load("stair_test");
+    ap_emu->load("stair_test");
     //ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
     //ap_emu->load("blinds_house");
@@ -242,6 +242,24 @@ ap_sprites_print()
         }
         LOG("Pushblock: " PRIXYV, PRIXYVF(ap_pushblocks[i].tl));
     }
+}
+
+const char * ap_door_attr_name(uint16_t idx) {
+    uint16_t attr = ap_door_attrs[idx];
+    static char sbuf[1024];
+    char *buf = sbuf;
+    if (!attr) {
+        sprintf(buf, "unknown:%#x", idx);
+        return sbuf;
+    }
+
+#define X(d) if (attr & CONCAT(DOOR_ATTR_, d)) { \
+    if (buf != sbuf) { *buf++ = '|'; } \
+    buf += sprintf(buf, STRINGIFY(d)); \
+    }
+DOOR_ATTR_LIST
+#undef X
+    return sbuf;
 }
 
 const char * const ap_inventory_names[] = {
