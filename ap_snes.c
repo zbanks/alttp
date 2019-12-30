@@ -71,7 +71,8 @@ AP_RAM_LIST
     //ap_emu->load("cave");
     //ap_emu->load("hc_stairs");
     //ap_emu->load("rock");
-    ap_emu->load("stair_test");
+    //ap_emu->load("stair_test");
+    ap_emu->load("near_hole");
     //ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
     //ap_emu->load("blinds_house");

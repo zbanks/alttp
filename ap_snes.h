@@ -311,6 +311,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0xF6] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door
     [0xF7] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door
     [0xF8] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door, 0x8000?
+    [0xF9] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door, ???
+    [0xFA] = TILE_ATTR_DOOR | TILE_ATTR_NODE, // Locked door, ???
     // Fake/unknown
     [0xFF] = TILE_ATTR_WALK,
 };

@@ -231,46 +231,52 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node, &unlockable)) {
         if (!unlockable)
             return RC_FAIL;
-        if (task->node->lock_node == NULL)
-            return RC_FAIL;
 
-        if (task->node->lock_node->type == NODE_OVERLAY) {
-            // Try bombing it
-            struct ap_task * new_task = ap_task_prepend(); 
-            new_task->type = TASK_BOMB;
-            new_task->node = task->node->lock_node;
-            snprintf(new_task->name, sizeof new_task->name, "bomb open");
-
-            new_task = ap_task_prepend(); 
-            new_task->type = TASK_SET_INVENTORY;
-            new_task->item = INVENTORY_BOMBS;
-            snprintf(new_task->name, sizeof new_task->name, "set bombs");
-
-            new_task = ap_task_prepend(); 
-            new_task->type = TASK_GOTO_POINT;
-            new_task->node = task->node->lock_node;
-            snprintf(new_task->name, sizeof new_task->name, "goto bomb %s", task->node->name);
+        if (ap_door_attrs[task->node->door_type] & DOOR_ATTR_SKEY) {
+            // pass
         } else {
-            struct ap_task * new_task = ap_task_prepend(); 
-            if (task->type != TASK_GOTO_POINT) {
-                new_task->type = TASK_GOTO_POINT;
-                new_task->node = task->node;
-                snprintf(new_task->name, sizeof new_task->name, "goto %s", task->node->name);
-                new_task = ap_task_prepend(); 
-            }
-            // Prepend an unlock task
-            new_task->type = TASK_GOTO_POINT;
-            new_task->node = task->node->lock_node;
-            snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
+            if (task->node->lock_node == NULL)
+                return RC_FAIL;
 
-            // Maybe we need to step off first
-            new_task = ap_task_prepend(); 
-            new_task->type = TASK_STEP_OFF_SWITCH;
-            new_task->node = task->node->lock_node;
-            snprintf(new_task->name, sizeof new_task->name, "step off");
+            if (task->node->lock_node->type == NODE_OVERLAY) {
+                // Try bombing it
+                struct ap_task * new_task = ap_task_prepend(); 
+                new_task->type = TASK_BOMB;
+                new_task->node = task->node->lock_node;
+                snprintf(new_task->name, sizeof new_task->name, "bomb open");
+
+                new_task = ap_task_prepend(); 
+                new_task->type = TASK_SET_INVENTORY;
+                new_task->item = INVENTORY_BOMBS;
+                snprintf(new_task->name, sizeof new_task->name, "set bombs");
+
+                new_task = ap_task_prepend(); 
+                new_task->type = TASK_GOTO_POINT;
+                new_task->node = task->node->lock_node;
+                snprintf(new_task->name, sizeof new_task->name, "goto bomb %s", task->node->name);
+            } else {
+                struct ap_task * new_task = ap_task_prepend(); 
+                if (task->type != TASK_GOTO_POINT) {
+                    new_task->type = TASK_GOTO_POINT;
+                    new_task->node = task->node;
+                    snprintf(new_task->name, sizeof new_task->name, "goto %s", task->node->name);
+                    new_task = ap_task_prepend(); 
+                }
+                // Prepend an unlock task
+                new_task->type = TASK_GOTO_POINT;
+                new_task->node = task->node->lock_node;
+                snprintf(new_task->name, sizeof new_task->name, "unlock %s", task->node->name);
+
+                // Maybe we need to step off first
+                new_task = ap_task_prepend(); 
+                new_task->type = TASK_STEP_OFF_SWITCH;
+                new_task->node = task->node->lock_node;
+                snprintf(new_task->name, sizeof new_task->name, "step off");
+            }
+            LOGB("Locked/bombable door; prepending open steps");
+            *joypad = 0;
+            return RC_INPR; // XXX should there be RC_RTRY?
         }
-        LOGB("Locked/bombable door; prepending open steps");
-        return RC_INPR; // XXX should there be RC_RTRY?
     }
 
     uint8_t module_index = *ap_ram.module_index;
@@ -406,17 +412,34 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->timeout = 200;
             task->state++;
         case 1:
+        case 2:
             if (screen != task->node->screen) {
                 task->timeout = 8;
-                task->state++;
+                task->state = 3;
             } else {
+                if (task->node->tile_attr == 0x55 && *ap_ram.push_timer != 0x20) {
+                    JOYPAD_SET(A);
+                    if (task->state == 1) {
+                        task->timeout += 500;
+                        task->state = 2;
+                    }
+                }
                 ap_joypad_setdir(joypad, task->direction);
                 break;
             }
-        case 2:
+        case 3:
+        case 4:
             if (submodule_index == 0x10) {
                 task->timeout++;
                 break;
+            }
+            if (task->node->tile_attr == 0x55 && *ap_ram.push_timer != 0x20) {
+                LOG("Push timer in transition!");
+                JOYPAD_SET(A);
+                if (task->state == 3) {
+                    task->timeout += 500;
+                    task->state = 4;
+                }
             }
             if (task->timeout == 1) {
                 if (screen != task->node->screen) {

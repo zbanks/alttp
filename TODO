@@ -32,3 +32,6 @@
     - distance matrix is from center of src to any point on dst
 * Santuary north door is a mix of 0x84 & 0x94
 * Handling of 0x55 rocks; need to do lift while transitioning
+* Screen ID 0x0400 (north of Kak) has 2 transitions on the top edge that are 'guarded' by 0x02 tiles
+* Key doors marked as locked right as they are being opened
+
