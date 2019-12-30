@@ -8,13 +8,6 @@
 
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
-    //INFO("BOMB: %x %x %x %x %x %x", *ap_ram.bomb_w1, *ap_ram.bomb_w2, *ap_ram.bomb_w3, *ap_ram.bomb_w4, *ap_ram.bomb_w5, *ap_ram.bomb_w6);
-    INFO("DOOR: %x %x %x %x %x %x %x %x" " %x %x %x %x %x %x %x %x",
-            ap_ram.dungeon_door_types[0], ap_ram.dungeon_door_types[1], ap_ram.dungeon_door_types[2], ap_ram.dungeon_door_types[3],
-            ap_ram.dungeon_door_types[4], ap_ram.dungeon_door_types[5], ap_ram.dungeon_door_types[6], ap_ram.dungeon_door_types[7],
-            ap_ram.dungeon_door_types[8], ap_ram.dungeon_door_types[9], ap_ram.dungeon_door_types[10], ap_ram.dungeon_door_types[11],
-            ap_ram.dungeon_door_types[12], ap_ram.dungeon_door_types[13], ap_ram.dungeon_door_types[14], ap_ram.dungeon_door_types[15]);
-
     assert_bp(frame == 0 || frame == ap_frame + 1);
     ap_frame = frame;
 
@@ -27,14 +20,14 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
     *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
     //*(uint8_t *) (uintptr_t) ap_ram.inventory_gloves = 1;
-    *(uint8_t *) (uintptr_t) &ap_ram.inventory_base[0x0b] = 1;
+    *(uint8_t *) (uintptr_t) &ap_ram.inventory_base[INVENTORY_LAMP] = 1;
 
     ap_req_update();
 
     static bool has_imported = false;
     if (!has_imported) {
         LOG("importing");
-        ap_map_import("map.12.txt");
+        ap_map_import("map.13.txt");
         //ap_map_import("map_state.5.00019532.txt");
         //ap_map_import("map_state.7.00021016.txt");
         has_imported = true;
@@ -100,51 +93,17 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     ap_map_bounds(&topleft, &bottomright);
     struct xy link = ap_link_xy();
 
-    //INFO("a: %d b: %d", *(uint16_t *)ap_emu->base(0x7E0410), *(uint16_t *)ap_emu->base(0x7E0412));
-
-    // May be able to use submodule index (0x1, 0xA) to find transitions
-    /*
-    static uint16_t last_map = -1; 
-    static uint16_t transition_counter = 0;
-    if (last_map == XYMAPSCREEN(topleft)) {
-        transition_counter++;
-    } else {
-        last_map = XYMAPSCREEN(topleft);
-        transition_counter = 0;
-    }
-    if (transition_counter < 300 || !XYIN(link, topleft, bottomright)) {
-        // Swing our sword for 300 frames, or until we can move
-        if (transition_counter & 1) {
-            JOYPAD_SET(B);
-        } else {
-            JOYPAD_CLEAR(B);
-        }
-        if ((*ap_ram.link_swordstate & 0xFE) == 0x80) {
-            transition_counter = 300;
-        } else {
-            return;
-        }
-    }
-    */
-
     ap_debug = JOYPAD_TEST(START);
     ap_map_tick();
     if (*ap_ram.link_state == LINK_STATE_HOLDING_BIG_ROCK) {
         JOYPAD_MASH(A, 0x01);
-    } else if (*ap_ram.link_state != LINK_STATE_GROUND) {
+    } else if (*ap_ram.link_state != LINK_STATE_GROUND && *ap_ram.link_state != LINK_STATE_FALLING_HOLE) {
+        INFO("Link state: %#x", *ap_ram.link_state);
     } else {
         if (!JOYPAD_TEST(Y)) {
             ap_plan_evaluate(joypad);
         }
     }
-
-    //JOYPAD_CLEAR(START);
-
-    if (!JOYPAD_TEST(TR)) {
-        //ap_follow_targets(joypad);
-    }
-
-    //INFO("%u L:" PRIXY " M: " PRIXY "," PRIXY " m %u", *ap_ram.dungeon_room, PRIXYF(ap_link_xy()), PRIXYF(topleft), PRIXYF(bottomright), XYMAPSCREEN(topleft));
 
     static uint16_t x = 0;
     if (x++ == 4000) { // && false) {
@@ -159,19 +118,9 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         x = 0;
     }
 
-    // sram_overworld_state & 0x2 = bomb open
-
-    /*
-    if (*ap_ram.in_building) {
-        INFO("%X Room: %#06x St: %4x SR: %4x      %s", module_index, screen->id, *ap_ram.room_state, ap_ram.sram_room_state[*ap_ram.dungeon_room], screen->name);
-    } else {
-        INFO("%X Ovrwld: %#06x St: %2x               %s", module_index, screen->id, ap_ram.sram_overworld_state[*ap_ram.overworld_index], screen->name);
-    }
-    */
     //LOG("Link %d %d %u %u", *ap_ram.link_dx, *ap_ram.link_dy, *ap_ram.link_x, *ap_ram.link_y);
     //INFO("citem: %#x", *ap_ram.current_item);
 
-    //uint8_t *b = ap_emu->base(0x7E001A);
     //INFO_HEXDUMP(b);
     if (frame % 2) {
         //JOYPAD_SET(A);

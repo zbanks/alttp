@@ -68,7 +68,7 @@ bool ap_manual_mode;
     X(sprite_state,         uint8_t,   0x7E0DD0)   \
     X(sprite_type,          uint8_t,   0x7E0E20)   \
     X(sprite_subtype1,      uint8_t,   0x7E0E30)   \
-    X(sprite_hp,            uint8_t,   0x7E0E50)   \
+    X(sprite_hp,            int8_t,    0x7E0E50)   \
     X(sprite_interaction,   uint8_t,   0x7E0E60)   \
     X(sprite_subtype2,      uint8_t,   0x7E0E80)   \
     X(sprite_lower_level,   uint8_t,   0x7E0F20)   \
@@ -169,6 +169,7 @@ extern struct ap_snes9x * ap_emu;
     X(SWCH) /* Floor button */ \
     X(STRS) /* Dungeon Stairs */ \
     X(MERG) /* Merge with similar tiles */ \
+    X(EDGE) /* Pits have weird collision; only check top edge */ \
 
 enum {
 #define X(d) CONCAT(_TILE_ATTR_INDEX_, d),
@@ -196,6 +197,7 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x1d] = TILE_ATTR_WALK, // stairs?
     [0x1e] = TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
     [0x1f] = TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs?
+    [0x20] = TILE_ATTR_EDGE, // Pit
 
     [0x22] = TILE_ATTR_WALK,
     [0x23] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button 0x8000
@@ -404,7 +406,7 @@ extern struct ap_sprite {
     uint16_t subtype;
     uint8_t state;
     uint8_t interaction;
-    uint8_t hp;
+    int8_t hp;
 
     bool active;
 

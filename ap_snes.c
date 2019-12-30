@@ -140,6 +140,8 @@ ap_sprites_update() {
             case 0x4a:
             case 0x4b:
             case 0x6a:
+            // Moldorm
+            case 0x18:
                 sprite->active = false;
                 if ((sprite->interaction & 0x1F) && sprite->hp > 0) {
                     sprite->active = true;

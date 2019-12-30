@@ -238,7 +238,8 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             if (task->node->lock_node == NULL)
                 return RC_FAIL;
 
-            if (task->node->lock_node->type == NODE_OVERLAY) {
+            if ((ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) ||
+                task->node->lock_node->type == NODE_OVERLAY) {
                 // Try bombing it
                 struct ap_task * new_task = ap_task_prepend(); 
                 new_task->type = TASK_BOMB;

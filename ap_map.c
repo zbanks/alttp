@@ -108,7 +108,6 @@ static const struct ap_screen_info {
     uint16_t id;
     char name[40];
     bool add_explore_goals;
-    bool key_doors;
     bool include_borders;
 } ap_screen_infos[] = {
     // Light Overworld
@@ -144,11 +143,11 @@ static const struct ap_screen_info {
     { .id = 0x2140, .name = "Master Sword Pedestal", },
     // Hyrule Castle
     { .id = 0x0c48, .name = "HC Entrance", },
-    { .id = 0x0e50, .name = "HC First Key", .key_doors = true, .add_explore_goals = true},
+    { .id = 0x0e50, .name = "HC First Key", .add_explore_goals = true},
     { .id = 0x0f50, .name = "HC Walkway", .include_borders = true, },
     { .id = 0x0f48, .name = "HC Green Guard"},
     { .id = 0x1040, .name = "HC Zelda Jail"},
-    { .id = 0x0650, .name = "Sewer Key Door", .key_doors = true, },
+    { .id = 0x0650, .name = "Sewer Key Door" },
     // Eastern Palace
     { .id = 0x1988, .name = "EP Entrance", },
     { .id = 0x1888, .name = "EP Hall 1", },
@@ -993,13 +992,13 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
                     cost = (1 << 20);
                 }
 
-                state[y-0][x-0].cost += cost;
-                // Weird hack to prevent cutting off doors & stairs
-                //if ((tile & (TILE_ATTR_DOOR | TILE_ATTR_STRS)) == 0) {
+                // Pit collision is weird
+                state[y-1][x-1].cost += cost;
+                if (!(tile & TILE_ATTR_EDGE)) {
+                    state[y-0][x-0].cost += cost;
                     state[y-0][x-1].cost += cost;
                     state[y-1][x-0].cost += cost;
-                    state[y-1][x-1].cost += cost;
-                //}
+                }
 
                 //state[y+1][x+1].ledge |= ledge_mask;
                 //state[y+1][x-0].ledge |= ledge_mask;
@@ -2957,7 +2956,7 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out) {
             return false;
         }
 
-        if (node->screen->info != NULL && node->screen->info->key_doors) {
+        if (ap_door_attrs[node->door_type] & DOOR_ATTR_SKEY) {
             *unlockable_out = (*ap_ram.dungeon_current_keys > 0);
 
             uint16_t bit = 0;
