@@ -66,6 +66,7 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node);
     X(TALK_NPC) \
     X(SCRIPT_SEQUENCE) \
     X(SCRIPT_KILLALL) \
+    X(SCRIPT_KILLDROPS) \
     X(BOMB) \
 
 enum ap_task_type {

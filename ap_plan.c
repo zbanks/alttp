@@ -194,6 +194,7 @@ ap_print_task(const struct ap_task * task)
         break;
     case TASK_SCRIPT_SEQUENCE:
     case TASK_SCRIPT_KILLALL:
+    case TASK_SCRIPT_KILLDROPS:
         buf += sprintf(buf, " [script=%s start_tl=" PRIXYV "]", task->node->script->name, PRIXYVF(task->node->script->start_tl));
         break;
     case TASK_SET_INVENTORY:
@@ -227,23 +228,35 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
 {
     int rc;
     struct ap_screen * screen = ap_update_map_screen(false);
+    struct xy link = ap_link_xy();
     bool unlockable = false;
     if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node, &unlockable)) {
-        if (!unlockable)
+        if (!unlockable) {
+            LOG("Cannot unlock door");
             return RC_FAIL;
+        }
 
-        if (ap_door_attrs[task->node->door_type] & DOOR_ATTR_SKEY) {
+        if (ap_door_attrs[task->node->door_type] & (DOOR_ATTR_SKEY | DOOR_ATTR_BKEY)) {
+            // pass
+        } else if ((ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) && task->type != TASK_TRANSITION) {
             // pass
         } else {
-            if (task->node->lock_node == NULL)
-                return RC_FAIL;
-
             if ((ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) ||
                 task->node->lock_node->type == NODE_OVERLAY) {
                 // Try bombing it
+                struct ap_node * bomb_node = task->node->lock_node;
+                if (bomb_node == NULL) {
+                    bomb_node = task->node;
+                }
+
                 struct ap_task * new_task = ap_task_prepend(); 
+                new_task->type = TASK_GOTO_POINT;
+                new_task->node = task->node;
+                snprintf(new_task->name, sizeof new_task->name, "goto bombed %s", task->node->name);
+
+                new_task = ap_task_prepend(); 
                 new_task->type = TASK_BOMB;
-                new_task->node = task->node->lock_node;
+                new_task->node = bomb_node;
                 snprintf(new_task->name, sizeof new_task->name, "bomb open");
 
                 new_task = ap_task_prepend(); 
@@ -251,11 +264,13 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                 new_task->item = INVENTORY_BOMBS;
                 snprintf(new_task->name, sizeof new_task->name, "set bombs");
 
-                new_task = ap_task_prepend(); 
-                new_task->type = TASK_GOTO_POINT;
-                new_task->node = task->node->lock_node;
-                snprintf(new_task->name, sizeof new_task->name, "goto bomb %s", task->node->name);
-            } else {
+                if (!XYIN(link, bomb_node->tl, bomb_node->br)) {
+                    new_task = ap_task_prepend(); 
+                    new_task->type = TASK_GOTO_POINT;
+                    new_task->node = bomb_node;
+                    snprintf(new_task->name, sizeof new_task->name, "goto bomb %s", task->node->name);
+                }
+            } else if (task->node->lock_node != NULL) {
                 struct ap_task * new_task = ap_task_prepend(); 
                 if (task->type != TASK_GOTO_POINT) {
                     new_task->type = TASK_GOTO_POINT;
@@ -273,7 +288,11 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                 new_task->type = TASK_STEP_OFF_SWITCH;
                 new_task->node = task->node->lock_node;
                 snprintf(new_task->name, sizeof new_task->name, "step off");
+            } else {
+                LOG("Don't know how to unlock door");
+                return RC_FAIL;
             }
+
             LOGB("Locked/bombable door; prepending open steps");
             *joypad = 0;
             return RC_INPR; // XXX should there be RC_RTRY?
@@ -323,7 +342,10 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         switch (task->state) {
         case 0:
             rc = ap_pathfind_node(task->node, true, 0);
-            if (rc < 0) return RC_FAIL;
+            if (rc < 0) {
+                LOG("ap_pathfind_node failed");
+                return RC_FAIL;
+            }
             task->timeout = rc + 32;
             task->state++;
         case 1:
@@ -369,7 +391,6 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_TALK_NPC:
-        LOGB("TODO"); // This just does uncle
         LOG("timeout: %d; state: %d; recving: %x; push: %x; item_recv_method: %x; link_state: %x", task->timeout, task->state, *ap_ram.recving_item, *ap_ram.push_timer, *ap_ram.item_recv_method, *ap_ram.link_state);
         switch (task->state) {
         case 0:
@@ -377,25 +398,34 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->state++;
         case 1:
             JOYPAD_SET(UP);
-            if (*ap_ram.link_state == 0x15) { // Holding item (uncle)
+            JOYPAD_MASH(A, 1);
+            if (*ap_ram.link_state == LINK_STATE_RECVING_ITEM || *ap_ram.link_state == LINK_STATE_RECVING_ITEM2 || *ap_ram.recving_item) {
+                // Holding item (uncle)
+                LOGB("holding item");
                 task->timeout = 128;
                 task->state++;
+            }
+            if (task->node->sprite_type == 0x73) {
+                // Return success early from the uncle
+                return RC_DONE;
             }
             break;
         case 2:
             JOYPAD_CLEAR(UP);
-            if (*ap_ram.link_state != 0x15) {
+            if (*ap_ram.link_state != LINK_STATE_RECVING_ITEM && *ap_ram.link_state != LINK_STATE_RECVING_ITEM2) {
                 return RC_DONE;
             }
             break;
         }
-        return RC_DONE;
         break;
     case TASK_LIFT_POT:
         switch (task->state) {
         case 0:
             rc = ap_pathfind_node(task->node, true, 0);
-            if (rc < 0) return RC_FAIL;
+            if (rc < 0) {
+                LOG("ap_pathfind_node failed");
+                return RC_FAIL;
+            }
             task->timeout = rc + 32;
             task->state++;
         case 1:
@@ -450,6 +480,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                     //LOG("transition: %s; %s; -", screen->name, task->node->screen->name);
                     //if (screen == task->node->adjacent_screen[0]) return RC_DONE;
                 }
+                LOG("Failed to transition in time");
                 return RC_FAIL;
             }
         }
@@ -497,22 +528,30 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         switch (task->state) {
         case 0:
             if (*ap_ram.current_item != INVENTORY_BOMBS) {
+                LOG("Bombs not equipped");
                 return RC_FAIL;
             }
             if (*ap_ram.inventory_bombs == 0) {
+                LOG("No bombs in inventory");
                 return RC_FAIL;
             }
             task->timeout = 200;
             task->state++;
-            JOYPAD_SET(Y);
+            if (task->node != NULL && task->node->adjacent_direction) {
+                ap_joypad_setdir(joypad, task->node->adjacent_direction);
+            }
             break;
         case 1:
+            JOYPAD_SET(Y);
+            task->state++;
+            break;
+        case 2:
             JOYPAD_CLEAR(Y);
             if (active_bomb) {
                 task->state++;
             }
             break;
-        case 2:
+        case 3:
             // TODO: Dodge the bomb
             if (!active_bomb) {
                 return RC_DONE;
@@ -524,7 +563,10 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         switch (task->state) {
         case 0:
             rc = ap_set_script(task->node->script);
-            if (rc < 0) return RC_FAIL;
+            if (rc < 0) {
+                LOG("ap_set_script failed: %s", task->node->script->sequence);
+                return RC_FAIL;
+            }
             task->timeout = rc + 32;
             task->state++;
         case 1:
@@ -533,8 +575,12 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_SCRIPT_KILLALL:
-        if (task->state == -100 && task->timeout == 1) {
-            return RC_DONE;
+    case TASK_SCRIPT_KILLDROPS:
+        if (task->state == -100) {
+            if (task->timeout == 1) {
+                return RC_DONE;
+            }
+            break;
         }
         if (task->state == 0 || task->timeout == 1) {
             size_t target = -1;
@@ -543,26 +589,36 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                     continue;
                 if (!XYIN(ap_sprites[i].tl, screen->tl, screen->br))
                     continue;
+                if (task->type == TASK_SCRIPT_KILLDROPS && ap_sprites[i].drop == 0)
+                    continue;
                 target = i;
                 LOGB("Targeting sprite #%zu", target);
                 break;
             }
             if (target == (size_t)-1) {
                 // Almost done; wait ~120 frames for loot to drop
+                LOG("Done killing; waiting 128 frames for loot to drop");
                 task->state = -100;
                 task->timeout = 128;
                 break;
             }
             rc = ap_pathfind_sprite(target);
-            if (rc == RC_FAIL) return RC_FAIL;
+            if (rc == RC_FAIL) {
+                LOG("ap_pathfind_sprite failed");
+                return RC_FAIL;
+            }
             task->timeout = MIN(20, MAX(8, rc));
             task->state++;
         } 
         if (task->state == 2000) { // Actual timeout
+            LOG("timeout");
             return RC_FAIL;
         }
         rc = ap_follow_targets(joypad);
-        if (rc == RC_FAIL) return RC_FAIL;
+        if (rc == RC_FAIL) {
+            LOG("ap_follow_targets failed");
+            return RC_FAIL;
+        }
         break;
     case TASK_NONE:
     default:
@@ -855,11 +911,12 @@ retry_new_goal:;
         }
         task = ap_task_append();
         task->node = min_goal->node;
-        if (task->node->script->type == SCRIPT_SEQUENCE) {
-            task->type = TASK_SCRIPT_SEQUENCE;
-        } else {
-            assert(task->node->script->type == SCRIPT_KILLALL);
-            task->type = TASK_SCRIPT_KILLALL;
+        enum script_type script_type = task->node->script->type;
+        switch (task->node->script->type) {
+        case SCRIPT_SEQUENCE: task->type = TASK_SCRIPT_SEQUENCE; break;
+        case SCRIPT_KILLALL: task->type = TASK_SCRIPT_KILLALL; break;
+        case SCRIPT_KILLDROPS: task->type = TASK_SCRIPT_KILLDROPS; break;
+        default: assert(0);
         }
         snprintf(task->name, sizeof task->name, "script");
         break;

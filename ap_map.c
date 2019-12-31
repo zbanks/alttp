@@ -41,7 +41,6 @@ static const struct ap_script ap_scripts[] = {
         .name = "Dam Chest Block Puzzle",
     },
     {
-        //.start_tl = XY(0xab00, 0x2370),
         .start_tl = XY(0xaaf0, 0x2340),
         .start_item = INVENTORY_BOMBS,
         .sequence = "Yvvv>v<vv^^>>>vv<UA>^^<<<^<<vvv>vv>>>>>",
@@ -52,7 +51,7 @@ static const struct ap_script ap_scripts[] = {
         .start_tl = XY(0x52f8, 0x0e60),
         .start_item = -1,
         .sequence = NULL,
-        .type = SCRIPT_KILLALL,
+        .type = SCRIPT_KILLDROPS,
         .name = "HC kill guard for key",
     },
     {
@@ -73,10 +72,9 @@ static const struct ap_script ap_scripts[] = {
         .start_tl = XY(0x4250, 0x1060),
         .start_item = -1,
         .sequence = NULL,
-        .type = SCRIPT_KILLALL,
+        .type = SCRIPT_KILLDROPS,
         .name = "HC kill miniboss free Zelda",
     },
-    /*
     {
         .start_tl = XY(0x0058, 0x0681),
         .start_item = -1,
@@ -84,13 +82,33 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_SEQUENCE,
         .name = "Jump into Kak well",
     },
-    */
     {
         .start_tl = XY(0x5a78, 0x25c0),
         .start_item = -1,
         .sequence = NULL,
         .type = SCRIPT_KILLALL,
         .name = "Mini Moldorm Cave",
+    },
+    {
+        .start_tl = XY(0x8278, 0x1580),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLALL,
+        .name = "EP Stalfos Room",
+    },
+    {
+        .start_tl = XY(0x8af8, 0x1390),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLDROPS,
+        .name = "EP Igor Key",
+    },
+    {
+        .start_tl = XY(0x83c0, 0x1b80),
+        .start_item = INVENTORY_BOW,
+        .sequence = NULL,
+        .type = SCRIPT_KILLALL,
+        .name = "EP Red Igor Room",
     },
     /* Need to bring old man to "door 0x30"
     {
@@ -1414,7 +1432,7 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         node->pgsearch.iter++;
         if (node == destination)
             goto search_done;
-        assert(node->type == NODE_TRANSITION || node == start_node);
+        assert(node->type == NODE_TRANSITION || node->type == NODE_KEYBLOCK || node == start_node);
 
         // Try going to an adjacent screen
         if (node->adjacent_node != NULL && node->adjacent_direction != 0) {
@@ -1438,9 +1456,13 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
                 continue;
             if (adj_node->_debug_blocked)
                 continue;
-            if (!(adj_node == destination || adj_node->type == NODE_TRANSITION))
+            if (!(adj_node == destination || adj_node->type == NODE_TRANSITION || adj_node->type == NODE_KEYBLOCK))
                 continue;
             if (adj_node->pgsearch.iter == iter + 1)
+                continue;
+            // Don't 'hop through' transition nodes on the same screen
+            if (adj_node->type == NODE_TRANSITION && node->type == NODE_TRANSITION &&
+                node->pgsearch.from != NULL && node->pgsearch.from->screen == node->screen && node->pgsearch.from->type == NODE_TRANSITION)
                 continue;
             //int delta_distance = ap_pathfind_local(node->screen, node->pgsearch.xy, adj_node->tl, adj_node->br, false);
             int delta_distance = ap_pathfind_node_distance(node, adj_node);
@@ -1952,6 +1974,9 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
     case NODE_CHEST:
         new_node->goal = ap_goal_add(GOAL_CHEST, new_node);
         break;
+    case NODE_KEYBLOCK:
+        //new_node->goal = ap_goal_add(GOAL_XXX new_node);
+        break;
     case NODE_SWITCH:
         //ap_goal_add(GOAL_EXPLORE, new_node);
         break;
@@ -2000,7 +2025,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
     */
     if (new_node->screen->id == 0x1481 && new_node->adjacent_direction == DIR_L) {
         // Door into EP stalfos room
-        new_node->_debug_blocked = true;
+        //new_node->_debug_blocked = true;
     }
     if (strcmp(new_node->name, "door 0x5e") == 0 || strcmp(new_node->name, "door 0x65") == 0) {
         // Stateful Fairy Fountain room
@@ -2132,6 +2157,7 @@ ap_update_map_screen_nodes()
         case NODE_SPRITE:
             break;
         case NODE_CHEST:
+        case NODE_KEYBLOCK:
         case NODE_ITEM:
         case NODE_TRANSITION:
         case NODE_NONE:
@@ -2151,7 +2177,7 @@ static void ap_map_screen_update_distances(struct ap_screen * screen) {
     size_t n_transition_nodes = 0;
     size_t n_other_nodes = 0;
     for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
-        if (node->type == NODE_TRANSITION) {
+        if (node->type == NODE_TRANSITION || node->type == NODE_KEYBLOCK) {
             n_transition_nodes++;
         } else {
             n_other_nodes++;
@@ -2167,7 +2193,7 @@ static void ap_map_screen_update_distances(struct ap_screen * screen) {
 
     size_t d = 0;
     for (struct ap_node * src = screen->node_list->next; src != screen->node_list; src = src->next) {
-        if (src->type != NODE_TRANSITION) {
+        if (src->type != NODE_TRANSITION && src->type != NODE_KEYBLOCK) {
             continue;
         }
         for (struct ap_node * dst = screen->node_list->next; dst != screen->node_list; dst = dst->next) {
@@ -2227,6 +2253,7 @@ ap_update_map_screen(bool force)
             screen->br = cell_br;
             screen->id = (screen->tl.x >> 8) | (screen->tl.y & 0xFF00);
             screen->dungeon_room = indoors ? *ap_ram.dungeon_room : -1;
+            screen->dungeon_id = indoors ? *ap_ram.dungeon_id / 2 : -1;
             const char * suffix = "";
             if (XYINDOORS(screen->tl)) {
                 if (XYONUPPER(screen->tl)) {
@@ -2437,7 +2464,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             new_node->adjacent_direction = i;
             new_node->tile_attr = ap_map_attr_from_ram(ap_box_edge(new_node->tl, new_node->br, i));
             new_node->locked_xy = XY(0, 0);
-            if (new_node->tile_attr == 0x82 || new_node->tile_attr == 0x83) { // locked door
+            if ((new_node->tile_attr & 0xF8) == 0x80) { // locked door
                 new_node->locked_xy = ap_box_edge(new_node->tl, new_node->br, dir_opp[i]);
                 new_node->locked_xy = XYOP1(new_node->locked_xy, &~7);
                 uint8_t attr = ap_map_attr_from_ram(new_node->locked_xy);
@@ -2730,17 +2757,22 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                         }
                         uint16_t a = ap_map_attr_from_ram(adjs[i]);
                         if (attr >= 0xF0 && attr <= 0xFA) {
-                            // If we're an 0xF# node; discard ourselves if there is a neighboring 0x82/0x83
+                            // If we're an 0xF# node; discard ourselves if there is a neighboring 0x8#
                             if (ap_tile_attrs[a] & TILE_ATTR_DOOR) {
-                                assert_bp(a == 0x82 || a == 0x83);
-                                found_dir = 0xFF;
-                                break;
+                                if (a == 0x30) {
+                                    // Stairs; don't expand into it, but still count this node
+                                    assert_bp(found_dir == 0);
+                                } else {
+                                    assert_bp((a & 0xF8) == 0x80);
+                                    found_dir = 0xFF;
+                                    break;
+                                }
                             }
                         } else {
-                            // If we're an 0x82/0x83 node; expand into the 0xF# node
+                            // If we're an 0x8# node; expand into the 0xF# node
                             if (a >= 0xF0 && a <= 0xFA) {
+                                assert_bp((attr & 0xF8) == 0x80);
                                 assert_bp(found_dir == 0);
-                                assert_bp(attr == 0x82 || attr == 0x83);
                                 found_dir = i + 1;
                             }
                         }
@@ -2813,12 +2845,25 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 new_node->br = XYOP2(new_node->br, +, dxy);
 
                 snprintf(new_node->name, sizeof new_node->name, "door %s 0x%02x %s %s", dir_names[new_node->adjacent_direction], attr, attr_name, ap_door_attr_name(new_node->door_type));
+                /*
             } else if (ap_tile_attrs[attr] & TILE_ATTR_CHST) {
-                new_node->type = NODE_CHEST;
-                // Chests are opened from the bottom
-                new_node->tl.y += 16;
-                new_node->br.y += 16;
-                snprintf(new_node->name, sizeof new_node->name, "chest 0x%02x %s", attr, attr_name);
+                assert_bp(attr < (0x58 + (*ap_ram.room_keyblock_index / 2)));
+                if (attr < (0x58 + (*ap_ram.room_chest_index / 2))) {
+                    new_node->type = NODE_CHEST;
+                    // Chests are opened from the bottom
+                    new_node->tl.y += 16;
+                    new_node->br.y += 16;
+                    snprintf(new_node->name, sizeof new_node->name, "chest 0x%02x %s", attr, attr_name);
+                } else {
+                    new_node->type = NODE_KEYBLOCK;
+                    // Extend keyblocks node up 16px because key blocks always (?) face upwards
+                    // This makes it possible for pathfind to reach everything in the "locked" area
+                    // before the node is unlocked
+                    new_node->tl.y -= 16;
+                    snprintf(new_node->name, sizeof new_node->name, "keyblock 0x%02x %s", attr, attr_name);
+                }
+                n_chests++;
+                */
             } else if (ap_tile_attrs[attr] & TILE_ATTR_SWCH) {
                 new_node->type = NODE_SWITCH;
                 new_node->adjacent_direction = 0;
@@ -2878,6 +2923,70 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 PRIXYF(door_xy), door_tilemap, layer, ap_door_attr_name(door_type));
         }
         assert_bp(n_doors == n_doors2);
+
+        size_t n_chests_and_keyblocks = *ap_ram.room_keyblock_index / 2;
+        size_t n_chests = *ap_ram.room_chest_index / 2;
+        assert(n_chests <= n_chests_and_keyblocks);
+
+        size_t chest_index;
+        for (chest_index = 0; chest_index < 168; chest_index++) {
+            uint16_t chest_id = ap_ram.dungeon_chests[chest_index * 3 + 0];
+            chest_id |= ap_ram.dungeon_chests[chest_index * 3 + 1] << 8;
+            if ((chest_id & 0x7FFF) == *ap_ram.dungeon_room) {
+                break;
+            }
+        }
+        assert(n_chests == 0 || chest_index != 168);
+
+        for (size_t i = 0; i < n_chests_and_keyblocks; i++) {
+            uint16_t chest_tilemap = ap_ram.room_chest_tilemaps[i];
+            struct xy chest_xy = ap_tilemap_to_xy(screen->tl, chest_tilemap & 0x7FFF);
+            // Undo the tilemap offset?
+            chest_xy = XYOP2(chest_xy, -, XY(8, 16));
+            if (!XYIN(chest_xy, screen->tl, screen->br)) {
+                continue;
+            }
+
+            new_node->tl = chest_xy;
+            new_node->tile_attr = 0x58 + i;
+
+            if (i >= n_chests) {
+                // Keyblock
+                new_node->type = NODE_KEYBLOCK;
+                // Extend keyblocks node up 16px because key blocks always (?) face upwards
+                // This makes it possible for pathfind to reach everything in the "locked" area
+                // before the node is unlocked
+                new_node->tl.y -= 16;
+                new_node->br = XYOP2(new_node->tl, +, XY(15, 31));
+                snprintf(new_node->name, sizeof new_node->name, "keyblock %zu", i);
+            } else {
+                assert_bp(chest_index != 168);
+                uint16_t chest_id = ap_ram.dungeon_chests[(chest_index + i) * 3 + 0];
+                chest_id |= ap_ram.dungeon_chests[(chest_index + i) * 3 + 1] << 8;
+                assert_bp((chest_id & 0x7FFF) == *ap_ram.dungeon_room);
+                if (chest_id & 0x8000) {
+                    // Big Chest
+                    assert_bp(i <= n_chests);
+                    new_node->type = NODE_CHEST;
+                    new_node->chest_type = 1;
+                    new_node->tl.y += 24;
+                    new_node->br = XYOP2(new_node->tl, +, XY(31, 15));
+                    snprintf(new_node->name, sizeof new_node->name, "big chest %zu", i);
+                } else {
+                    // Small Chest
+                    new_node->type = NODE_CHEST;
+                    new_node->chest_type = 0;
+                    new_node->tl.y += 16;
+                    new_node->br = XYOP2(new_node->tl, +, XY(15, 15));
+                    snprintf(new_node->name, sizeof new_node->name, "chest %zu", i);
+                }
+            }
+            LOG("Chest %zu: " PRIXYV " (%#06x) %s",
+                i, PRIXYVF(chest_xy), chest_tilemap, new_node->name);
+
+            ap_screen_commit_node(screen, &new_node);
+            new_node_count++;
+        }
     }
 
 }
@@ -2905,7 +3014,9 @@ ap_map_record_transition_from(struct ap_node * src_node)
         if (node->adjacent_direction != src_node->adjacent_direction &&
             dir_opp[node->adjacent_direction] != src_node->adjacent_direction)
             continue;
-        if (XYL1BOXDIST(dst_xy, node->tl, node->br) && XYL1BOXDIST(dst_xy2, node->tl, node->br))
+        // Check if any corner is in the ndoe
+        if (XYL1BOXDIST(dst_xy, node->tl, node->br) && XYL1BOXDIST(dst_xy2, node->tl, node->br)
+            && XYL1BOXDIST(XY(dst_xy.x, dst_xy2.y), node->tl, node->br) && XYL1BOXDIST(XY(dst_xy2.x, dst_xy.y), node->tl, node->br))
             continue;
         dst_node = node;
         break;
@@ -2946,6 +3057,13 @@ bool
 ap_node_islocked(struct ap_node * node, bool *unlockable_out) {
     *unlockable_out = false;
 
+    if (node->type == NODE_KEYBLOCK) {
+        // Requires Big Key for dungeon
+        assert_bp(node->screen->dungeon_id < 16);
+        uint16_t bit = 1 << (15 - node->screen->dungeon_id);
+        return !(*ap_ram.sram_dungeon_bigkeys & bit);
+    }
+
     // Is locked or unlockable
     if (node->type != NODE_TRANSITION)
         return false;
@@ -2956,16 +3074,26 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out) {
             return false;
         }
 
-        if (ap_door_attrs[node->door_type] & DOOR_ATTR_SKEY) {
-            *unlockable_out = (*ap_ram.dungeon_current_keys > 0);
+        if (ap_door_attrs[node->door_type] & (DOOR_ATTR_SKEY | DOOR_ATTR_BOMB)) {
+            if (ap_door_attrs[node->door_type] & DOOR_ATTR_SKEY) {
+                assert_bp(node->screen->dungeon_id < 16);
+                *unlockable_out = ap_ram.sram_dungeon_keys[node->screen->dungeon_id] > 0;
+            } else if (ap_door_attrs[node->door_type] & DOOR_ATTR_BKEY) {
+                assert_bp(node->screen->dungeon_id < 16);
+                uint16_t bit = 1 << (15 - node->screen->dungeon_id);
+                *unlockable_out =  *ap_ram.sram_dungeon_bigkeys & bit;
+            } else if (ap_door_attrs[node->door_type] & DOOR_ATTR_BOMB) {
+                *unlockable_out = true;
+            }
 
             uint16_t bit = 0;
             switch (node->tile_attr) {
-            case 0xF8: bit = 0x1000; break;
+            case 0xF8: bit = 0x8000; break; // contradictory; maybe 0x1000?
+            case 0xF0: bit = 0x8000; break; // 
+
             case 0xF7: bit = 0x2000; break; // guess
             case 0xF6: bit = 0x4000; break; // guess
             case 0xF5: bit = 0x8000; break; // guess
-            case 0xF0: bit = 0x1000; break; // guess
             case 0xF1: bit = 0x2000; break; // guess
             case 0xF2: bit = 0x4000; break; // guess
             case 0xF3: bit = 0x8000; break; // guess
@@ -3020,13 +3148,14 @@ ap_map_export(const char * filename) {
         struct ap_screen *screen = map_screens[s];
         if (screen == NULL) continue;
         if (XYMAPSCREEN(screen->tl) != s) continue;
-        fprintf(f, ">0x%04x 0x%04x,0x%04x 0x%04x,0x%04x # %s\n",
-                screen->id, screen->tl.x, screen->tl.y, screen->br.x, screen->br.y, screen->name);
+        fprintf(f, ">0x%04x 0x%04x,0x%04x 0x%04x,0x%04x %u %u # %s\n",
+                screen->id, screen->tl.x, screen->tl.y, screen->br.x, screen->br.y, 
+                screen->dungeon_room, screen->dungeon_id, screen->name);
         for (const struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
             fprintf(f, "@%p 0x%04x,0x%04x 0x%04x,0x%04x",
                     node, node->tl.x, node->tl.y, node->br.x, node->br.y);
-            fprintf(f, " %u %u %p %d %u %u %s\n",
-                    node->type, node->adjacent_direction, node->adjacent_node, node->tile_attr, node->sprite_type, node->sprite_subtype, node->name);
+            fprintf(f, " %u %u %p %d %u %u %u %s\n",
+                    node->type, node->adjacent_direction, node->adjacent_node, node->tile_attr, node->sprite_type, node->sprite_subtype, node->door_type, node->name);
         }
         for (size_t y = 0; y < 0x80; y++) {
             fprintf(f, "|");
@@ -3056,15 +3185,18 @@ ap_map_import(const char * filename) {
             continue;
         } else if (line[0] == '>') {
             screen = NONNULL(calloc(1, sizeof *screen));
-            int rc = sscanf(line, ">0x%hx 0x%hx,0x%hx 0x%hx,0x%hx",
-                &screen->id, &screen->tl.x, &screen->tl.y, &screen->br.x, &screen->br.y);
-            assert_bp(rc == 5);
+            int rc = sscanf(line, ">0x%hx 0x%hx,0x%hx 0x%hx,0x%hx %hu %hhu",
+                &screen->id, &screen->tl.x, &screen->tl.y, &screen->br.x, &screen->br.y,
+                &screen->dungeon_room, &screen->dungeon_id);
+            assert_bp(rc == 7);
+            /*
             if (XYINDOORS(screen->tl)) {
                 screen->dungeon_room = (screen->tl.x - 0x4000) / 0x800;
                 screen->dungeon_room += ((screen->tl.y) / 0x200) * 16;
             } else {
                 screen->dungeon_room = -1;
             }
+            */
             for (const struct ap_screen_info * info = ap_screen_infos; info->id != (uint16_t) -1; info++) {
                 if (info->id == screen->id) {
                     screen->info = info;
@@ -3107,10 +3239,10 @@ ap_map_import(const char * filename) {
             void * node_ptr = 0;
             void * adj_node_ptr = 0;
             int node_type = NODE_NONE;
-            int rc = sscanf(line, "@%p 0x%hx,0x%hx 0x%hx,0x%hx %d %hhu %p %hhd %hhu %hu %[^\n]",
+            int rc = sscanf(line, "@%p 0x%hx,0x%hx 0x%hx,0x%hx %d %hhu %p %hhd %hhu %hu %hhu %[^\n]",
                 &node_ptr, &node->tl.x, &node->tl.y, &node->br.x, &node->br.y,
-                &node_type, &node->adjacent_direction, &adj_node_ptr, &node->tile_attr, &node->sprite_type, &node->sprite_subtype, node->name);
-            assert_bp(rc == 12);
+                &node_type, &node->adjacent_direction, &adj_node_ptr, &node->tile_attr, &node->sprite_type, &node->sprite_subtype, &node->door_type, node->name);
+            assert_bp(rc == 13);
             node->type = node_type;
             if (node->type == NODE_SCRIPT) {
                 free(node);

@@ -66,13 +66,15 @@ AP_RAM_LIST
     //ap_emu->load("well");
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
-    //ap_emu->load("home");
+    ap_emu->load("home");
+    //ap_emu->load("epsta");
     //ap_emu->load("cave_front");
     //ap_emu->load("cave");
     //ap_emu->load("hc_stairs");
     //ap_emu->load("rock");
     //ap_emu->load("stair_test");
-    ap_emu->load("near_hole");
+    //ap_emu->load("near_hole");
+    //ap_emu->load("mmcave");
     //ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
     //ap_emu->load("blinds_house");
@@ -123,6 +125,7 @@ ap_sprites_update() {
         sprite->subtype = ap_ram.sprite_subtype1[i] | (ap_ram.sprite_subtype2[i] << 8);
         sprite->interaction = ap_ram.sprite_interaction[i];
         sprite->hp = ap_ram.sprite_hp[i];
+        sprite->drop = ap_ram.sprite_drop[i] == 0x03 ? 0 : ap_ram.sprite_drop[i];
 
         sprite->attrs = ap_sprite_attrs_for_type(sprite->type, sprite->subtype, *ap_ram.dungeon_room);
 
@@ -140,8 +143,12 @@ ap_sprites_update() {
             case 0x4a:
             case 0x4b:
             case 0x6a:
-            // Moldorm
-            case 0x18:
+            case 0x18: // Moldorm
+            case 0xa7: // Stalfos
+            case 0x83: // Green Igor
+            case 0x84: // Red Igor
+            case 0x4e: // Curly thing
+            case 0x4f: // Curly thing
                 sprite->active = false;
                 if ((sprite->interaction & 0x1F) && sprite->hp > 0) {
                     sprite->active = true;
@@ -229,10 +236,10 @@ ap_sprites_print()
     for (uint8_t i = 0; i < 16; i++) {
         if (ap_sprites[i].type == 0)
             continue;
-        LOG("Sprite %-2u: %c attrs=%s type=%#x subtype=%#x state=%#x inter=%#x hp=%#x " PRIBBV " dist=%d",
+        LOG("Sprite %-2u: %c attrs=%s type=%#-4x subtype=%#-6x state=%#-4x inter=%#-4x hp=%-2d drop=%#-4x " PRIBBV " dist=%d",
             i, "qA"[!!ap_sprites[i].active], ap_sprite_attr_name(ap_sprites[i].attrs),
             ap_sprites[i].type, ap_sprites[i].subtype, ap_sprites[i].state,
-            ap_sprites[i].interaction, ap_sprites[i].hp,
+            ap_sprites[i].interaction, ap_sprites[i].hp, ap_sprites[i].drop,
             PRIBBVF(ap_sprites[i]), XYL1BOXDIST(link, ap_sprites[i].tl, ap_sprites[i].br));
     }
 

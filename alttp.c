@@ -27,7 +27,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     static bool has_imported = false;
     if (!has_imported) {
         LOG("importing");
-        ap_map_import("map.13.txt");
+        ap_map_import("map.16.txt");
         //ap_map_import("map_state.5.00019532.txt");
         //ap_map_import("map_state.7.00021016.txt");
         has_imported = true;
@@ -97,7 +97,12 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     ap_map_tick();
     if (*ap_ram.link_state == LINK_STATE_HOLDING_BIG_ROCK) {
         JOYPAD_MASH(A, 0x01);
-    } else if (*ap_ram.link_state != LINK_STATE_GROUND && *ap_ram.link_state != LINK_STATE_FALLING_HOLE) {
+    } else if (*ap_ram.link_state == LINK_STATE_RECVING_ITEM || *ap_ram.link_state == LINK_STATE_RECVING_ITEM2) {
+        JOYPAD_MASH(A, 0x01);
+    } else if (*ap_ram.link_state == LINK_STATE_FALLING_HOLE && *ap_ram.link_falling >= 2) {
+        INFO("Falling into a hole...");
+    } else if (*ap_ram.link_state != LINK_STATE_GROUND
+            && *ap_ram.link_state != LINK_STATE_FALLING_HOLE) {
         INFO("Link state: %#x", *ap_ram.link_state);
     } else {
         if (!JOYPAD_TEST(Y)) {
@@ -106,7 +111,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     }
 
     static uint16_t x = 0;
-    if (x++ == 4000) { // && false) {
+    if (x++ == 40000) { // && false) {
         ap_print_map_full();
         //ap_graph_print();
         char reqs[4096];

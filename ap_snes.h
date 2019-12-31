@@ -48,6 +48,7 @@ bool ap_manual_mode;
     X(link_hold,            uint16_t,  0x7E0308)   \
     X(link_direction,       uint8_t,   0x7E002F)   \
     X(link_swordstate,      uint8_t,   0x7E003A)   \
+    X(link_falling,         uint8_t,   0x7E005B)   \
     X(link_state,           uint8_t,   0x7E005D)   \
     X(link_lower_level,     uint8_t,   0x7E00EE)   \
     X(link_on_switch,       uint16_t,  0x7E0430)   \
@@ -59,6 +60,9 @@ bool ap_manual_mode;
     X(room_state,           uint16_t,  0x7E0400)   \
     X(room_layout,          uint8_t,   0x7E040E)   \
     X(room_trap_doors,      uint16_t,  0x7E0468)   \
+    X(room_chest_index,     uint16_t,  0x7E0496)   \
+    X(room_keyblock_index,  uint16_t,  0x7E0498)   \
+    X(room_chest_tilemaps,  uint16_t,  0x7E06E0)   \
     X(dngn_open_doors,      uint16_t,  0x7E068C)   \
     X(sprite_drop,          uint8_t,   0x7E0CBA)   \
     X(sprite_y_lo,          uint8_t,   0x7E0D00)   \
@@ -91,6 +95,7 @@ bool ap_manual_mode;
     X(hitbox_height,        uint8_t,   0x06F7D5)   \
     X(block_data,           uint32_t,  0x7EF940)   \
     X(map_area,             uint16_t,  0x7E040A)   \
+    X(dungeon_id,           uint16_t,  0x7E040C)   \
     X(map_y_offset,         uint16_t,  0x7E0708)   \
     X(map_y_mask,           uint16_t,  0x7E070A)   \
     X(map_x_offset,         uint16_t,  0x7E070C)   \
@@ -127,6 +132,7 @@ bool ap_manual_mode;
     X(sram_overworld_state, uint8_t,   0x7EF280)   \
     X(sram_goal_rupees,     uint16_t,  0x7EF360)   \
     X(sram_actual_rupees,   uint16_t,  0x7EF362)   \
+    X(sram_dungeon_bigkeys, uint16_t,  0x7EF366)   \
     X(sram_pendants,        uint8_t,   0x7EF374)   \
     X(sram_crystals,        uint8_t,   0x7EF37A)   \
     X(sram_dungeon_keys,    uint8_t,   0x7EF37C)   \
@@ -146,6 +152,7 @@ bool ap_manual_mode;
     X(dungeon_door_types,   uint16_t,  0x7E1980)   \
     X(dungeon_door_tilemaps,uint16_t,  0x7E19A0)   \
     X(dungeon_door_dirs,    uint16_t,  0x7E19C0)   \
+    X(dungeon_chests,       uint8_t,   0x01E96C)   \
 
 extern struct ap_ram {
 #define X(name, type, offset) const type * name;
@@ -244,12 +251,14 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x56] = TILE_ATTR_LFT2,
     [0x57] = TILE_ATTR_BONK,
 
-    [0x58] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x59] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x5A] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x5B] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x5C] = TILE_ATTR_NODE | TILE_ATTR_CHST,
-    [0x5D] = TILE_ATTR_NODE | TILE_ATTR_CHST,
+    // Chest, Big Chest, Big Key Block
+    [0x58] = TILE_ATTR_CHST,
+    [0x59] = TILE_ATTR_CHST,
+    [0x5A] = TILE_ATTR_CHST,
+    [0x5B] = TILE_ATTR_CHST,
+    [0x5C] = TILE_ATTR_CHST,
+    [0x5D] = TILE_ATTR_CHST,
+
     [0x5E] = TILE_ATTR_NODE | TILE_ATTR_DOOR, // stairs up
     [0x5F] = TILE_ATTR_NODE | TILE_ATTR_DOOR, // stairs down
 
@@ -343,6 +352,7 @@ enum ap_link_state {
     LINK_STATE_SWIMMING = 0x4,
     LINK_STATE_FALLING_LEDGE = 0x11,
     LINK_STATE_RECVING_ITEM = 0x15,
+    LINK_STATE_RECVING_ITEM2 = 0x17, // XXX delete this?
     LINK_STATE_HOLDING_BIG_ROCK = 0x18,
 };
 /* Link State
@@ -407,6 +417,7 @@ extern struct ap_sprite {
     uint8_t state;
     uint8_t interaction;
     int8_t hp;
+    uint8_t drop;
 
     bool active;
 
@@ -568,7 +579,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x80] = SPRITE_ATTR_ENMY, // Wandering Fireball Chains
     [0x81] = SPRITE_ATTR_ENMY, // Waterhoppers
     [0x82] = SPRITE_ATTR_ENMY, // Swirling Fire Faeries (Eastern Palace)
-    [0x83] = SPRITE_ATTR_ENMY, // Rocklops
+    [0x83] = SPRITE_ATTR_ENMY, // Green Rocklops (igor, eyegor)
     [0x84] = SPRITE_ATTR_ENMY, // Red Rocklops
     [0x85] = SPRITE_ATTR_ENMY, // Yellow Stalfos (drops to the ground, dislodges head)
     [0x86] = SPRITE_ATTR_ENMY, // Fire Breathing Dinos?
@@ -628,7 +639,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0xB9] = 0, // Feuding Friends on Death Mountain
     [0xBA] = 0, // Whirlpool
     // subtype2: 0x00 salesman; 0x0c bombs; 0x0a one heart; 0x07 red potion
-    [0xBB] = SPRITE_ATTR_BLKF | SPRITE_ATTR_TALK, // Salesman / chestgame guy / 300 rupee giver guy / Chest game thief / Item for sale
+    [0xBB] = SPRITE_ATTR_SUBT | SPRITE_ATTR_BLKF | SPRITE_ATTR_TALK, // Salesman / chestgame guy / 300 rupee giver guy / Chest game thief / Item for sale
     [0xBC] = SPRITE_ATTR_BLKF, // Drunk in the inn
     [0xBD] = SPRITE_ATTR_ENMY, // Vitreous (the large eyeball)
     [0xBE] = SPRITE_ATTR_ENMY, // Vitreous' smaller eyeballs
@@ -710,6 +721,9 @@ static const struct ap_sprite_subtype ap_sprite_subtypes[] = {
     { .type = 0x73, .subtype = 0x0100, .only_dungeon_room = 0x55, .attrs = SPRITE_ATTR_TALK | SPRITE_ATTR_NODE},
     // Guy next to Zelda
     { .type = 0x73, .subtype = 0x0200, .attrs = SPRITE_ATTR_BLKS },
+
+    // Mini Moldorm Cave Guy
+    { .type = 0xBB, .subtype = 0x0200, .only_dungeon_room = 0x123, .attrs = SPRITE_ATTR_NODE | SPRITE_ATTR_TALK },
 };
 
 #define DOOR_ATTR_LIST \

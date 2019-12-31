@@ -2,11 +2,11 @@
 * Mark how to open doors in rooms (e.g. defeat all enemies)
     - Temporary workaround: SCRIPT_KILLALL
     - Future: add TASK_KILLALL
-* Defeat all the stalfos in that one room in eastern palace
-* Handle/detect big chest
-* Bomb walls
+* DONE: Defeat all the stalfos in that one room in eastern palace
+* DONE: Handle/detect big chest
+* DONE: Bomb walls
 * DONE: Pre-programmed movement for certain tasks
-* Reset goal attempts count when re-visiting screens
+* Reset goal attempts count when re-visiting screens (maybe a bad idea?)
 * DONE Remove map/geography from ap_graph
 * DONE: Cache node reachability within a screen
     - DONE: Can be used to speed up ap_pathfind_global
@@ -17,8 +17,8 @@
     - How to encode which doors need keys?
 * DONE: Prune "clearly invalid" unreachable, walkable edges on screens
     - May not be important once the whole map exists
-* Avoid bomb explosions
-* Indoor overlays
+* Avoid bomb explosions; place more accurately (e.g. opening doors)
+* DONE: Indoor overlays (bombable doors)
 * DONE: Reset chest states on importing maps
     - Read from SRAM
 * Re-enable jumping down ledges in the overworld
@@ -27,11 +27,21 @@
 * Handle fairy fountains (door 0x5e to screen 0x2369) -- stateful
     - Also fortune tellers, 0x65
     - For now, blocked
-* Eastern Palace has a bunch of weird task failures around unlocking doors
-* ap_pathfind_global can "jump" through long nodes
-    - distance matrix is from center of src to any point on dst
-* Santuary north door is a mix of 0x84 & 0x94
-* Handling of 0x55 rocks; need to do lift while transitioning
+* (DONE?) Eastern Palace has a bunch of weird task failures around unlocking doors
+* DONE: ap_pathfind_global can "jump" through long nodes
+* DONE: Santuary north door is a mix of 0x84 & 0x94
+* DONE: Handling of 0x55 rocks; need to do lift while transitioning
 * Screen ID 0x0400 (north of Kak) has 2 transitions on the top edge that are 'guarded' by 0x02 tiles
-* Key doors marked as locked right as they are being opened
-
+* DONE: Key doors marked as locked right as they are being opened
+* DONE: Bombing walls; may need to go back to node before trying to bomb it
+* Read in accurate Big Key state
+* Use sprite.drop to automatically add a KILLDROPS task/goal/script
+* Know how to use the Bow to kill Red Igors (+ Armos Knights?)
+* Get stuck after jumping into Kak well
+* Script the race game
+* Need to reapply KILLALL script in certain rooms on re-entry
+* Blasted into "blocking" sprite; need to allow escaping
+* Overworld holes
+* Stairs up to top of HC/escape are broken
+* Second dam check
+* Master Sword barrier on HC

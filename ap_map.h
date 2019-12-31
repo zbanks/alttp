@@ -61,6 +61,7 @@ DIR_LIST
     X(SPRITE) \
     X(SCRIPT) \
     X(OVERLAY) \
+    X(KEYBLOCK) \
 
 struct ap_screen;
 struct ap_node {
@@ -86,9 +87,12 @@ NODE_TYPE_LIST
 #undef X
     } type;
     uint8_t tile_attr;
-    uint8_t door_type;
     uint8_t sprite_type;
     uint16_t sprite_subtype;
+    union {
+        uint8_t door_type;
+        uint8_t chest_type;
+    };
     bool _reachable;
     bool _debug_blocked;
     char name[32];
@@ -109,6 +113,7 @@ struct ap_screen {
     struct xy tl;
     struct xy br;
     uint16_t id;
+    uint8_t dungeon_id;
     uint16_t dungeon_room;
     struct ap_node node_list[1];
     const struct ap_screen_info * info;
@@ -132,6 +137,7 @@ struct ap_script {
     enum script_type {
         SCRIPT_SEQUENCE,
         SCRIPT_KILLALL,
+        SCRIPT_KILLDROPS,
     } type;
     char name[32];
 };
