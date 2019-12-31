@@ -602,6 +602,16 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                 task->timeout = 128;
                 break;
             }
+            if (ap_sprites[target].attrs & SPRITE_ATTR_VBOW) {
+                if (*ap_ram.current_item != INVENTORY_BOW) {
+                    struct ap_task * new_task = ap_task_prepend(); 
+                    new_task->type = TASK_SET_INVENTORY;
+                    new_task->item = INVENTORY_BOW;
+                    snprintf(new_task->name, sizeof new_task->name, "set bow to kill %zu", target);
+                    break;
+                }
+                JOYPAD_MASH(Y, 0x20);
+            }
             rc = ap_pathfind_sprite(target);
             if (rc == RC_FAIL) {
                 LOG("ap_pathfind_sprite failed");
@@ -974,7 +984,10 @@ done:;
         task_name = ap_task_type_names[LL_PEEK(ap_task_list)->type];
         task_timeout = LL_PEEK(ap_task_list)->timeout;
     }
-    INFO("Plan: %s, %s (%d)", goal_name, task_name, task_timeout);
+    struct ap_screen * screen = ap_update_map_screen(NULL);
+    INFO("Plan: %s, %s (%d) %s %s", goal_name, task_name, task_timeout,
+            ap_room_tag_print(screen->room_tags[0]),
+            ap_room_tag_print(screen->room_tags[1]));
 }
 
 void

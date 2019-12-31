@@ -2168,6 +2168,7 @@ ap_update_map_screen_nodes()
 
 static void ap_map_add_nodes_to_screen(struct ap_screen * screen);
 static void ap_map_add_scripts_to_screen(struct ap_screen * screen);
+static void ap_map_add_constants_to_screen(struct ap_screen * screen);
 
 static int ap_node_distance_cmp(const void *a, const void *b) {
     return memcmp(a, b, sizeof(struct ap_node_distance));
@@ -2252,8 +2253,15 @@ ap_update_map_screen(bool force)
             screen->tl = cell_tl;
             screen->br = cell_br;
             screen->id = (screen->tl.x >> 8) | (screen->tl.y & 0xFF00);
-            screen->dungeon_room = indoors ? *ap_ram.dungeon_room : -1;
-            screen->dungeon_id = indoors ? *ap_ram.dungeon_id / 2 : -1;
+            if (indoors) {
+                screen->dungeon_id = *ap_ram.dungeon_id / 2;
+                screen->dungeon_room = *ap_ram.dungeon_room;
+                screen->dungeon_tags = *ap_ram.dungeon_tags;
+            } else {
+                screen->dungeon_id = -1;
+                screen->dungeon_room = -1;
+                screen->dungeon_tags = 0;
+            }
             const char * suffix = "";
             if (XYINDOORS(screen->tl)) {
                 if (XYONUPPER(screen->tl)) {
@@ -2272,9 +2280,9 @@ ap_update_map_screen(bool force)
             //ap_graph_init(&screen->graph, screen->name);
             LL_INIT(screen->node_list);
             if (screen->info) {
-                snprintf(screen->name, sizeof screen->name, "%s%s " PRIXY " x " PRIXY, screen->info->name, suffix, PRIXYF(cell_tl), PRIXYF(cell_br));
+                snprintf(screen->name, sizeof screen->name, "%s%s %#x " PRIXY " x " PRIXY, screen->info->name, suffix, screen->dungeon_tags, PRIXYF(cell_tl), PRIXYF(cell_br));
             } else {
-                snprintf(screen->name, sizeof screen->name, "%#06x%s " PRIXYV " x " PRIXYV, screen->id, suffix, PRIXYVF(cell_tl), PRIXYVF(cell_br));
+                snprintf(screen->name, sizeof screen->name, "%#06x%s %#x " PRIXYV " x " PRIXYV, screen->id, suffix, screen->dungeon_tags, PRIXYVF(cell_tl), PRIXYVF(cell_br));
 
             }
 
@@ -2290,6 +2298,7 @@ ap_update_map_screen(bool force)
             ap_screen_refresh_cache(screen);
             ap_map_add_nodes_to_screen(screen);
             ap_map_add_scripts_to_screen(screen);
+            ap_map_add_constants_to_screen(screen);
             ap_map_add_sprite_nodes_to_screen(screen);
             ap_map_screen_update_distances(screen);
         }
@@ -2336,6 +2345,57 @@ static void ap_map_add_scripts_to_screen(struct ap_screen * screen) {
         snprintf(new_node->name, sizeof new_node->name, "Script: %s", script->name);
 
         ap_screen_add_raw_node(screen, new_node);
+    }
+}
+
+static void ap_map_add_constants_to_screen(struct ap_screen * screen) {
+    if (!XYINDOORS(screen->tl)) {
+        screen->quadmask = QUAD_ALL;
+        screen->room_tags[0] = NULL;
+        screen->room_tags[1] = NULL;
+    } else {
+        // Quadrants are 0x100 x 0x100 big
+        screen->quadmask = 0;
+        struct xy tl = XYOP1(screen->tl, & 0x1FF);
+        struct xy br = XYOP1(screen->br, & 0x1FF);
+        struct {
+            uint8_t q;
+            struct xy xy;
+        } points[4] = {
+            { .q = QUAD_A, .xy = XY(0x080, 0x080), },
+            { .q = QUAD_B, .xy = XY(0x180, 0x080), },
+            { .q = QUAD_C, .xy = XY(0x080, 0x180), },
+            { .q = QUAD_D, .xy = XY(0x180, 0x180), },
+        };
+        for (size_t i = 0; i < 4; i++) {
+            if (XYIN(points[i].xy, tl, br)) {
+                screen->quadmask |= points[i].q;
+            }
+        }
+
+        // Room Tags
+        uint8_t index_1 = screen->dungeon_tags & 0xFF;
+        uint8_t index_2 = (screen->dungeon_tags >> 8) & 0xFF;
+        assert(index_1 < 0x40 && index_2 < 0x40);
+        const struct ap_room_tag * tag_1 = &ap_room_tags[index_1];
+        const struct ap_room_tag * tag_2 = &ap_room_tags[index_2];
+
+        size_t t = 0;
+        screen->room_tags[0] = NULL;
+        screen->room_tags[0] = NULL;
+        if (tag_1->quadmask & screen->quadmask) {
+            screen->room_tags[t++] = tag_1;
+            assert_bp(!tag_1->unsure);
+        }
+        if (tag_2->quadmask & screen->quadmask) {
+            screen->room_tags[t++] = tag_2;
+            assert_bp(!tag_2->unsure);
+        }
+
+        LOGB("Screen tags: %s %s; %s",
+            ap_room_tag_print(screen->room_tags[0]),
+            ap_room_tag_print(screen->room_tags[1]),
+            screen->name);
     }
 }
 
@@ -3148,9 +3208,9 @@ ap_map_export(const char * filename) {
         struct ap_screen *screen = map_screens[s];
         if (screen == NULL) continue;
         if (XYMAPSCREEN(screen->tl) != s) continue;
-        fprintf(f, ">0x%04x 0x%04x,0x%04x 0x%04x,0x%04x %u %u # %s\n",
+        fprintf(f, ">0x%04x 0x%04x,0x%04x 0x%04x,0x%04x %u %u %u # %s\n",
                 screen->id, screen->tl.x, screen->tl.y, screen->br.x, screen->br.y, 
-                screen->dungeon_room, screen->dungeon_id, screen->name);
+                screen->dungeon_room, screen->dungeon_id, screen->dungeon_tags, screen->name);
         for (const struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
             fprintf(f, "@%p 0x%04x,0x%04x 0x%04x,0x%04x",
                     node, node->tl.x, node->tl.y, node->br.x, node->br.y);
@@ -3185,9 +3245,9 @@ ap_map_import(const char * filename) {
             continue;
         } else if (line[0] == '>') {
             screen = NONNULL(calloc(1, sizeof *screen));
-            int rc = sscanf(line, ">0x%hx 0x%hx,0x%hx 0x%hx,0x%hx %hu %hhu",
+            int rc = sscanf(line, ">0x%hx 0x%hx,0x%hx 0x%hx,0x%hx %hu %hhu %hu",
                 &screen->id, &screen->tl.x, &screen->tl.y, &screen->br.x, &screen->br.y,
-                &screen->dungeon_room, &screen->dungeon_id);
+                &screen->dungeon_room, &screen->dungeon_id, &screen->dungeon_tags);
             assert_bp(rc == 7);
             /*
             if (XYINDOORS(screen->tl)) {
@@ -3231,6 +3291,7 @@ ap_map_import(const char * filename) {
             }
 
             ap_map_add_scripts_to_screen(screen);
+            ap_map_add_constants_to_screen(screen);
 
             attr_row = 0;
         } else if (line[0] == '@') {

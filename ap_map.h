@@ -112,9 +112,12 @@ NODE_TYPE_LIST
 struct ap_screen {
     struct xy tl;
     struct xy br;
+    uint8_t quadmask;
     uint16_t id;
     uint8_t dungeon_id;
     uint16_t dungeon_room;
+    uint16_t dungeon_tags;
+    const struct ap_room_tag * room_tags[2];
     struct ap_node node_list[1];
     const struct ap_screen_info * info;
     char name[64];

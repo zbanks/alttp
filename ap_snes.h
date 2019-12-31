@@ -54,6 +54,7 @@ bool ap_manual_mode;
     X(link_on_switch,       uint16_t,  0x7E0430)   \
     X(overworld_index,      uint16_t,  0x7E008A)   \
     X(dungeon_room,         uint16_t,  0x7E00A0)   \
+    X(dungeon_tags,          uint16_t,  0x7E00AE)   \
     X(menu_part,            uint8_t,   0x7E00C8)   \
     X(current_item,         uint8_t,   0x7E0202)   \
     X(recving_item,         uint8_t,   0x7E02D8)   \
@@ -399,6 +400,7 @@ enum ap_link_state {
     X(FLLW) /* Thing that can follow you */ \
     X(NODE) /* Worth making a node for */ \
     X(SUBT) /* Has subtype flags */ \
+    X(VBOW) /* Only vunerable to the Bow */ \
 
 enum {
 #define X(d) CONCAT(_SPRITE_ATTR_INDEX_, d),
@@ -508,7 +510,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x3E] = SPRITE_ATTR_ENMY, // Rock Rupee Crabs
     [0x3F] = SPRITE_ATTR_ENMY, // Tutorial Soldiers from beginning of game
     
-    [0x40] = SPRITE_ATTR_ENMY | SPRITE_ATTR_BLKF, // Hyrule Castle Barrier to Agahnims Tower
+    [0x40] = SPRITE_ATTR_ENMY /*| SPRITE_ATTR_BLKF */, // Hyrule Castle Barrier to Agahnims Tower
     [0x41] = SPRITE_ATTR_ENMY, // Soldier
     [0x42] = SPRITE_ATTR_ENMY, // Blue Soldier
     [0x43] = SPRITE_ATTR_ENMY, // Red Spear Soldier
@@ -526,7 +528,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x4F] = SPRITE_ATTR_ENMY, // Blobs?
     
     [0x50] = SPRITE_ATTR_ENMY, // Metal Balls (in Eastern Palace)
-    [0x51] = SPRITE_ATTR_ENMY, // Armos
+    [0x51] = SPRITE_ATTR_ENMY | SPRITE_ATTR_VBOW, // Armos
     [0x52] = 0, // Giant Zora
     [0x53] = SPRITE_ATTR_ENMY, // Armos Knights Boss
     [0x54] = SPRITE_ATTR_ENMY, // Lanmolas boss
@@ -580,7 +582,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x81] = SPRITE_ATTR_ENMY, // Waterhoppers
     [0x82] = SPRITE_ATTR_ENMY, // Swirling Fire Faeries (Eastern Palace)
     [0x83] = SPRITE_ATTR_ENMY, // Green Rocklops (igor, eyegor)
-    [0x84] = SPRITE_ATTR_ENMY, // Red Rocklops
+    [0x84] = SPRITE_ATTR_ENMY | SPRITE_ATTR_VBOW, // Red Rocklops
     [0x85] = SPRITE_ATTR_ENMY, // Yellow Stalfos (drops to the ground, dislodges head)
     [0x86] = SPRITE_ATTR_ENMY, // Fire Breathing Dinos?
     [0x87] = SPRITE_ATTR_ENMY, // Flames
@@ -879,3 +881,138 @@ extern struct ap_ancillia {
 
 void ap_ancillia_update();
 void ap_ancillia_print();
+
+enum ap_quadrant {
+    QUAD_ALL = 0xF,
+    QUAD_A = 0x1,
+    QUAD_B = 0x2,
+    QUAD_C = 0x4,
+    QUAD_D = 0x8,
+};
+
+const char * ap_quadrant_print(uint8_t quadmask);
+
+#define ROOM_ACTION_LIST \
+    X(NONE) \
+    X(CLEAR_LEVEL) \
+    X(CLEAR_QUADRANT) \
+    X(CLEAR_ROOM) \
+    X(KILL_ENEMY) \
+    X(LIGHT_TORCHES) \
+    X(MOVE_BLOCK) \
+    X(OPEN_CHEST) \
+    X(PULL_LEVER) \
+    X(SWITCH_HOLD) \
+    X(SWITCH_TOGGLE) \
+    X(TURN_OFF_WATER) \
+    X(TURN_ON_WATER) \
+
+#define ROOM_RESULT_LIST \
+    X(NONE) \
+    X(CHEST) \
+    X(CLEAR_LEVEL) \
+    X(CRASH) \
+    X(HOLES) \
+    X(MOVE_BLOCK) \
+    X(OPEN_DOORS) \
+    X(OPEN_WALL) \
+    X(WATERGATE) \
+
+enum ap_room_action {
+#define X(n) CONCAT(ROOM_ACTION_, n),
+ROOM_ACTION_LIST
+#undef X
+};
+
+enum ap_room_result {
+#define X(n) CONCAT(ROOM_RESULT_, n),
+ROOM_RESULT_LIST
+#undef X
+};
+
+static const struct ap_room_tag {
+    uint8_t quadmask;
+    enum ap_room_action action;
+    enum ap_room_result result;
+    bool unsure;
+} ap_room_tags[0x40] = {
+    [0x00] = { .quadmask = 0,               .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_NONE },
+
+    [0x01] = { .quadmask = QUAD_A,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x02] = { .quadmask = QUAD_B,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x03] = { .quadmask = QUAD_C,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x04] = { .quadmask = QUAD_D,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x05] = { .quadmask = QUAD_A | QUAD_C, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x06] = { .quadmask = QUAD_B | QUAD_D, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x07] = { .quadmask = QUAD_A | QUAD_B, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x08] = { .quadmask = QUAD_C | QUAD_D, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x09] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_QUADRANT,   .result = ROOM_RESULT_OPEN_DOORS, .unsure = true },
+    [0x0A] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_ROOM,       .result = ROOM_RESULT_OPEN_DOORS, .unsure = true },
+
+    [0x0B] = { .quadmask = QUAD_A,          .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x0C] = { .quadmask = QUAD_B,          .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x0D] = { .quadmask = QUAD_C,          .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x0E] = { .quadmask = QUAD_D,          .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x0F] = { .quadmask = QUAD_A | QUAD_C, .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x10] = { .quadmask = QUAD_B | QUAD_D, .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x11] = { .quadmask = QUAD_A | QUAD_B, .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS },
+    [0x12] = { .quadmask = QUAD_C | QUAD_D, .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS },
+
+    [0x13] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS, .unsure = true },
+    [0x14] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_PULL_LEVER,       .result = ROOM_RESULT_OPEN_DOORS, .unsure = true },
+    [0x15] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_LEVEL,      .result = ROOM_RESULT_OPEN_DOORS, .unsure = true },
+
+    [0x16] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_HOLD,      .result = ROOM_RESULT_OPEN_DOORS },
+    [0x17] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_TOGGLE,    .result = ROOM_RESULT_OPEN_DOORS },
+
+    [0x18] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_TURN_OFF_WATER,   .result = ROOM_RESULT_NONE, .unsure = true },
+    [0x19] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_TURN_ON_WATER,    .result = ROOM_RESULT_NONE, .unsure = true },
+    [0x1A] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_WATERGATE, .unsure = true },
+    [0x1B] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_WATERGATE, .unsure = true },
+
+    [0x1C] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_OPEN_WALL, .unsure = true },
+    [0x1D] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_OPEN_WALL, .unsure = true },
+    [0x1E] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_CRASH, .unsure = true },
+    [0x1F] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_CRASH, .unsure = true },
+
+    [0x20] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_TOGGLE,    .result = ROOM_RESULT_OPEN_WALL, .unsure = true },
+    [0x21] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x22] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_OPEN_CHEST,       .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x23] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x24] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+
+    [0x25] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CLEAR_LEVEL, .unsure = true },
+    [0x26] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_MOVE_BLOCK, .unsure = true },
+
+    [0x27] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_TOGGLE,    .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x28] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_PULL_LEVER,       .result = ROOM_RESULT_OPEN_WALL, .unsure = true },
+
+    [0x29] = { .quadmask = QUAD_A,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x2A] = { .quadmask = QUAD_B,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x2B] = { .quadmask = QUAD_C,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x2C] = { .quadmask = QUAD_D,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x2D] = { .quadmask = QUAD_A | QUAD_C, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x2E] = { .quadmask = QUAD_B | QUAD_D, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x2F] = { .quadmask = QUAD_A | QUAD_B, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x30] = { .quadmask = QUAD_C | QUAD_D, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x31] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_QUADRANT,   .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x32] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_ROOM,       .result = ROOM_RESULT_CHEST, .unsure = true },
+
+    [0x33] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_LIGHT_TORCHES,    .result = ROOM_RESULT_OPEN_DOORS, },
+
+    [0x34] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x35] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x36] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x37] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x38] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_NONE, },
+    [0x39] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x3A] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
+    [0x3B] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_OPEN_CHEST,       .result = ROOM_RESULT_HOLES, .unsure = true },
+
+    [0x3C] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_CHEST, },
+    [0x3D] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_OPEN_DOORS, },
+    [0x3E] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_LIGHT_TORCHES,    .result = ROOM_RESULT_CHEST, },
+    [0x3F] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_NONE, .unsure = true},
+};
+
+const char * ap_room_tag_print(const struct ap_room_tag * tag);

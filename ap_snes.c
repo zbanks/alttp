@@ -66,8 +66,8 @@ AP_RAM_LIST
     //ap_emu->load("well");
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
-    ap_emu->load("home");
-    //ap_emu->load("epsta");
+    //ap_emu->load("home");
+    ap_emu->load("epsta");
     //ap_emu->load("cave_front");
     //ap_emu->load("cave");
     //ap_emu->load("hc_stairs");
@@ -311,4 +311,41 @@ ap_ancillia_print() {
     if (!printed_any) {
         LOG("No Ancillia");
     }
+}
+
+const char *
+ap_quadrant_print(uint8_t quadmask) {
+    static char sbuf[8];
+    char *buf = sbuf;
+    if (quadmask & QUAD_A) *buf++ = 'A';
+    if (quadmask & QUAD_B) *buf++ = 'B';
+    if (quadmask & QUAD_C) *buf++ = 'C';
+    if (quadmask & QUAD_D) *buf++ = 'D';
+    *buf++ = '\0';
+    return sbuf;
+}
+
+const char * ap_room_tag_print(const struct ap_room_tag * tag) {
+    if (tag == NULL) {
+        return "";
+    }
+
+    const char *action = "(unknown)";
+    switch(tag->action) {
+#define X(n) case CONCAT(ROOM_ACTION_, n): action = STRINGIFY(n); break;
+ROOM_ACTION_LIST
+#undef X
+    }
+
+    const char *result = "(unknown)";
+    switch(tag->result) {
+#define X(n) case CONCAT(ROOM_RESULT_, n): result = STRINGIFY(n); break;
+ROOM_RESULT_LIST
+#undef X
+    }
+
+    static char sbuf[256];
+    snprintf(sbuf, sizeof(sbuf), "%s:%s:%s",
+            ap_quadrant_print(tag->quadmask), action, result);
+    return sbuf;
 }
