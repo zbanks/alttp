@@ -65,9 +65,7 @@ ap_print_goals(bool no_limit)
                 fprintf(f, " on %s", goal->node->screen->name);
             }
         }
-        char reqbuf[4096];
-        ap_req_print(&goal->req, reqbuf);
-        fprintf(f, " Needs: %s", reqbuf);
+        fprintf(f, " Needs: %s", ap_req_print(&goal->req));
         fprintf(f, "\n");
     }
     fprintf(f, "\n");
@@ -195,7 +193,9 @@ ap_print_task(const struct ap_task * task)
     case TASK_SCRIPT_SEQUENCE:
     case TASK_SCRIPT_KILLALL:
     case TASK_SCRIPT_KILLDROPS:
-        buf += sprintf(buf, " [script=%s start_tl=" PRIXYV "]", task->node->script->name, PRIXYVF(task->node->script->start_tl));
+        if (task->node != NULL) {
+            buf += sprintf(buf, " [script=%s start_tl=" PRIXYV "]", task->node->script->name, PRIXYVF(task->node->script->start_tl));
+        }
         break;
     case TASK_SET_INVENTORY:
         buf += sprintf(buf, " [item=%#x]", task->item);
@@ -230,7 +230,8 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     struct ap_screen * screen = ap_update_map_screen(false);
     struct xy link = ap_link_xy();
     bool unlockable = false;
-    if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node, &unlockable)) {
+    const struct ap_room_tag * unlock_tag = NULL;
+    if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node, &unlockable, &unlock_tag)) {
         if (!unlockable) {
             LOG("Cannot unlock door");
             return RC_FAIL;
@@ -242,7 +243,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             // pass
         } else {
             if ((ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) ||
-                task->node->lock_node->type == NODE_OVERLAY) {
+                (task->node->lock_node != NULL && task->node->lock_node->type == NODE_OVERLAY)) {
                 // Try bombing it
                 struct ap_node * bomb_node = task->node->lock_node;
                 if (bomb_node == NULL) {
@@ -270,7 +271,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                     new_task->node = bomb_node;
                     snprintf(new_task->name, sizeof new_task->name, "goto bomb %s", task->node->name);
                 }
-            } else if (task->node->lock_node != NULL) {
+            } else if (unlock_tag != NULL && unlock_tag->action == ROOM_ACTION_SWITCH_TOGGLE) {
                 struct ap_task * new_task = ap_task_prepend(); 
                 if (task->type != TASK_GOTO_POINT) {
                     new_task->type = TASK_GOTO_POINT;
@@ -288,8 +289,35 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                 new_task->type = TASK_STEP_OFF_SWITCH;
                 new_task->node = task->node->lock_node;
                 snprintf(new_task->name, sizeof new_task->name, "step off");
+            } else if (unlock_tag != NULL &&
+                    (unlock_tag->action == ROOM_ACTION_KILL_ENEMY || unlock_tag->action == ROOM_ACTION_CLEAR_LEVEL)) {
+                // XXX CLEAR_LEVEL is separate from KILL_ENEMY
+                struct ap_task * new_task = ap_task_prepend(); 
+                if (task->type != TASK_GOTO_POINT) {
+                    new_task->type = TASK_GOTO_POINT;
+                    new_task->node = task->node;
+                    snprintf(new_task->name, sizeof new_task->name, "goto %s", task->node->name);
+                    new_task = ap_task_prepend(); 
+                }
+
+                // Prepend an killall task
+                new_task->type = TASK_SCRIPT_KILLALL;
+                snprintf(new_task->name, sizeof new_task->name, "killall");
+
+                // Spawn the stalfos
+                if (task->node->screen->id == 0x1580) {
+                    for (struct ap_node * node = screen->node_list->next; node != screen->node_list; node = node->next) {
+                        if (node->type == NODE_ITEM && node->tile_attr == 0x74) {
+                            new_task = ap_task_prepend(); 
+                            new_task->type = TASK_LIFT_POT;
+                            new_task->node = node;
+                            snprintf(new_task->name, sizeof new_task->name, "spawn");
+                            break;
+                        }
+                    }
+                }
             } else {
-                LOG("Don't know how to unlock door");
+                LOG("Don't know how to unlock door (%s)", ap_room_tag_print(unlock_tag));
                 return RC_FAIL;
             }
 
@@ -582,6 +610,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             }
             break;
         }
+        bool no_sword = false;
         if (task->state == 0 || task->timeout == 1) {
             size_t target = -1;
             for (size_t i = 0; i < 16; i++) {
@@ -608,9 +637,20 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
                     new_task->type = TASK_SET_INVENTORY;
                     new_task->item = INVENTORY_BOW;
                     snprintf(new_task->name, sizeof new_task->name, "set bow to kill %zu", target);
-                    break;
+
+                    task->state = 0;
+                    task->timeout = 0;
+                    return RC_INPR;
                 }
-                JOYPAD_MASH(Y, 0x20);
+                if (ap_sprites[target].type == 0x84) {
+                    if (ap_sprites[target].interaction == 0x07) {
+                        JOYPAD_MASH(Y, 0x04);
+                    }
+                } else {
+                    JOYPAD_MASH(Y, 0x08);
+                }
+
+                no_sword = true;
             }
             rc = ap_pathfind_sprite(target);
             if (rc == RC_FAIL) {
@@ -628,6 +668,9 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         if (rc == RC_FAIL) {
             LOG("ap_follow_targets failed");
             return RC_FAIL;
+        }
+        if (no_sword) {
+            JOYPAD_CLEAR(B);
         }
         break;
     case TASK_NONE:

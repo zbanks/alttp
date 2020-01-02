@@ -24,7 +24,7 @@ void ap_req_require(struct ap_req * req, size_t slot, uint16_t requirement);
 
 bool ap_req_is_satisfied(const struct ap_req * req);
 
-void ap_req_print(const struct ap_req * req, char *buf);
+const char * ap_req_print(const struct ap_req * req);
 
 #define REQUIREMENT_LIST \
     INVENTORY_LIST \

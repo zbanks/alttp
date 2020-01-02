@@ -96,10 +96,12 @@ bool ap_req_is_satisfied(const struct ap_req * req) {
     return all_zero;
 }
 
-void ap_req_print(const struct ap_req * req, char * buf) {
+const char * ap_req_print(const struct ap_req * req) {
+    static char sbuf[4096];
+    char *buf = sbuf;
     if (req == NULL) {
         reqmask_print(&current_reqmask, &buf);
-        return;
+        return sbuf;
     }
 
     *buf++ = '[';
@@ -120,4 +122,5 @@ void ap_req_print(const struct ap_req * req, char * buf) {
     }
     *buf++ = ']';
     *buf++ = '\0';
+    return sbuf;
 }

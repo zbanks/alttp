@@ -78,6 +78,7 @@ bool ap_manual_mode;
     X(sprite_subtype2,      uint8_t,   0x7E0E80)   \
     X(sprite_lower_level,   uint8_t,   0x7E0F20)   \
     X(sprite_hitbox_idx,    uint8_t,   0x7E0F60)   \
+    X(overlord_types,       uint8_t,   0x7E0B00)   \
     X(ancillia_bf0,         uint8_t,   0x7E0BF0)   \
     X(ancillia_y_lo,        uint8_t,   0x7E0BFA)   \
     X(ancillia_x_lo,        uint8_t,   0x7E0C04)   \
@@ -145,6 +146,7 @@ bool ap_manual_mode;
     X(inventory_bombs,      uint8_t,   0x7EF343)   \
     X(inventory_gloves,     uint8_t,   0x7EF354)   \
     X(inventory_sword,      uint8_t,   0x7EF359)   \
+    X(inventory_quiver,     uint8_t,   0x7EF377)   \
     X(dungeon_bigkeys,      uint16_t,  0x7EF366)   \
     X(dungeon_keys,         uint8_t,   0x7EF37C)   \
     X(dungeon_current_keys, uint8_t,   0x7EF36F)   \
@@ -528,9 +530,9 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x4F] = SPRITE_ATTR_ENMY, // Blobs?
     
     [0x50] = SPRITE_ATTR_ENMY, // Metal Balls (in Eastern Palace)
-    [0x51] = SPRITE_ATTR_ENMY | SPRITE_ATTR_VBOW, // Armos
+    [0x51] = SPRITE_ATTR_ENMY, // Armos
     [0x52] = 0, // Giant Zora
-    [0x53] = SPRITE_ATTR_ENMY, // Armos Knights Boss
+    [0x53] = SPRITE_ATTR_ENMY | SPRITE_ATTR_VBOW, // Armos Knights Boss
     [0x54] = SPRITE_ATTR_ENMY, // Lanmolas boss
     [0x55] = SPRITE_ATTR_ENMY, // Zora / Fireballs (including the blue Agahnim fireballs)
     [0x56] = SPRITE_ATTR_ENMY, // Walking Zora
@@ -960,7 +962,7 @@ static const struct ap_room_tag {
 
     [0x13] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_MOVE_BLOCK,       .result = ROOM_RESULT_OPEN_DOORS, .unsure = true },
     [0x14] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_PULL_LEVER,       .result = ROOM_RESULT_OPEN_DOORS, .unsure = true },
-    [0x15] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_LEVEL,      .result = ROOM_RESULT_OPEN_DOORS, .unsure = true },
+    [0x15] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_LEVEL,      .result = ROOM_RESULT_OPEN_DOORS, }, // Boss room
 
     [0x16] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_HOLD,      .result = ROOM_RESULT_OPEN_DOORS },
     [0x17] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_TOGGLE,    .result = ROOM_RESULT_OPEN_DOORS },
@@ -981,10 +983,10 @@ static const struct ap_room_tag {
     [0x23] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
     [0x24] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_HOLES, .unsure = true },
 
-    [0x25] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CLEAR_LEVEL, .unsure = true },
+    [0x25] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CLEAR_LEVEL, }, // Boss room
     [0x26] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_MOVE_BLOCK, .unsure = true },
 
-    [0x27] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_TOGGLE,    .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x27] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_TOGGLE,    .result = ROOM_RESULT_CHEST },
     [0x28] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_PULL_LEVER,       .result = ROOM_RESULT_OPEN_WALL, .unsure = true },
 
     [0x29] = { .quadmask = QUAD_A,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },

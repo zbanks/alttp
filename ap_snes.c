@@ -130,8 +130,7 @@ ap_sprites_update() {
         sprite->attrs = ap_sprite_attrs_for_type(sprite->type, sprite->subtype, *ap_ram.dungeon_room);
 
         switch (sprite->type) {
-            // Guard-like sprites
-            case 0x41:
+            case 0x41: // Guard-like sprites
             case 0x42:
             case 0x43:
             case 0x44:
@@ -153,6 +152,9 @@ ap_sprites_update() {
                 if ((sprite->interaction & 0x1F) && sprite->hp > 0) {
                     sprite->active = true;
                 }
+                break;
+            case 0x53: // Armos Knights
+                sprite->active = sprite->hp > 0;
                 break;
             default:
                 if (sprite->attrs & SPRITE_ATTR_TALK) {

@@ -200,7 +200,10 @@ int
 ap_map_record_transition_from(struct ap_node * src_node);
 
 bool
-ap_node_islocked(struct ap_node * node, bool *unlockable_out);
+ap_node_islocked(struct ap_node * node, bool *unlockable_out, const struct ap_room_tag **  unlock_tag_out);
+
+void
+ap_node_islocked_print(struct ap_node * node);
 
 void
 ap_map_import(const char * filename);

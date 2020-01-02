@@ -19,6 +19,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     //*(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;
     *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
     *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
+    *(uint8_t *) (uintptr_t) ap_ram.inventory_quiver = 10;
     //*(uint8_t *) (uintptr_t) ap_ram.inventory_gloves = 1;
     *(uint8_t *) (uintptr_t) &ap_ram.inventory_base[INVENTORY_LAMP] = 1;
 
@@ -36,9 +37,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         ap_print_state();
         ap_print_map_full();
         //ap_graph_print();
-        char reqs[4096];
-        ap_req_print(NULL, reqs);
-        LOGB("Current requirements satisfied: %s", reqs);
+        LOGB("Current requirements satisfied: %s", ap_req_print(NULL));
         ap_print_map_screen(NULL);
         //ap_print_goals();
         //exit(0);
@@ -114,9 +113,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     if (x++ == 40000) { // && false) {
         ap_print_map_full();
         //ap_graph_print();
-        char reqs[4096];
-        ap_req_print(NULL, reqs);
-        LOGB("Current requirements satisfied: %s", reqs);
+        LOGB("Current requirements satisfied: %s", ap_req_print(NULL));
         char filename[128];
         snprintf(filename, sizeof filename, "map_state.8.%08u.txt", frame);
         //ap_map_export(filename);

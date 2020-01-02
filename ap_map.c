@@ -24,6 +24,7 @@ static int ap_target_subtimeout = 0;
 static bool ap_target_scripted = false;
 static struct xy ap_target_dst_tl;
 static struct xy ap_target_dst_br;
+static uint8_t ap_target_sprite_index = 0;
 static struct ap_screen * ap_target_screen;
 
 const char * const ap_node_type_names[] = {
@@ -89,6 +90,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "Mini Moldorm Cave",
     },
+    /*
     {
         .start_tl = XY(0x8278, 0x1580),
         .start_item = -1,
@@ -96,6 +98,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "EP Stalfos Room",
     },
+    */
     {
         .start_tl = XY(0x8af8, 0x1390),
         .start_item = -1,
@@ -104,12 +107,21 @@ static const struct ap_script ap_scripts[] = {
         .name = "EP Igor Key",
     },
     {
+        .start_tl = XY(0x8378, 0x19B8),
+        .start_item = INVENTORY_BOW,
+        .sequence = NULL,
+        .type = SCRIPT_KILLALL,
+        .name = "EP Armos Knights Boss",
+    },
+    /*
+    {
         .start_tl = XY(0x83c0, 0x1b80),
         .start_item = INVENTORY_BOW,
         .sequence = NULL,
         .type = SCRIPT_KILLALL,
         .name = "EP Red Igor Room",
     },
+    */
     /* Need to bring old man to "door 0x30"
     {
         .start_tl = XY(0x4278, 0x1fc6),
@@ -774,19 +786,28 @@ ap_follow_targets(uint16_t * joypad)
     //struct xy sword_rt = XYOP1(dir_dxy[dir_cw[d]], * 16 + 8);
     struct xy link_sword_up = XYOP2(link, +, sword_up);
     //struct xy link_sword_rt = XYOP2(link, +, sword_rt);
-
-    if ((joypad_mask & SNES_MASK(B)) == 0) {
-        for (uint8_t i = 0; i < 16; i++) {
-            if (!*ap_ram.inventory_sword) {
-                break;
-            }
-            if (!ap_sprites[i].active) {
-                continue;
-            }
-            if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY) {
-                if (XYL1BOXDIST(link_sword_up, ap_sprites[i].tl, ap_sprites[i].br) <= 8) {
-                    JOYPAD_MASH(B, 0x10); // Sword
+    //
+    if (ap_sprites[ap_target_sprite_index].attrs & SPRITE_ATTR_VBOW) {
+        uint8_t i = ap_target_sprite_index;
+        if (ap_sprites[i].type == 0x84 && ap_sprites[i].interaction == 0x07 &&
+                XYL1BOXDIST(link_sword_up, ap_sprites[i].tl, ap_sprites[i].br) <= 8) {
+            JOYPAD_MASH(Y, 0x08);
+            JOYPAD_CLEAR(B);
+        }
+    } else {
+        if ((joypad_mask & SNES_MASK(B)) == 0) {
+            for (uint8_t i = 0; i < 16; i++) {
+                if (!*ap_ram.inventory_sword) {
                     break;
+                }
+                if (!ap_sprites[i].active) {
+                    continue;
+                }
+                if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY) {
+                    if (XYL1BOXDIST(link_sword_up, ap_sprites[i].tl, ap_sprites[i].br) <= 8) {
+                        JOYPAD_MASH(B, 0x10); // Sword
+                        break;
+                    }
                 }
             }
         }
@@ -1426,7 +1447,8 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
         if (node->pgsearch.iter == iter + 1)
             continue;
         bool unlockable = false;
-        if (ap_node_islocked(node, &unlockable) && !unlockable)
+        const struct ap_room_tag * unlock_tag = NULL;
+        if (ap_node_islocked(node, &unlockable, &unlock_tag) && !unlockable)
             continue;
         assert(node->pgsearch.iter == iter);
         node->pgsearch.iter++;
@@ -1806,10 +1828,12 @@ ap_pathfind_node(struct ap_node * node, bool commit, int max_distance)
     }
     */
     bool unlockable = false;
-    if (ap_node_islocked(node, &unlockable) && !unlockable) {
+    const struct ap_room_tag * unlock_tag = NULL;
+    if (ap_node_islocked(node, &unlockable, &unlock_tag) && !unlockable) {
         return -1;
     }
     struct xy link = ap_link_xy();
+    ap_target_sprite_index = 0;
     return ap_pathfind_global(link, node, commit, max_distance);
 }
 
@@ -1820,6 +1844,7 @@ ap_pathfind_sprite(size_t sprite_idx)
     struct ap_screen * screen = map_screens[XYMAPSCREEN(link)];
     assert(screen != NULL);
     assert_bp(XYIN(ap_sprites[sprite_idx].tl, screen->tl, screen->br));
+    ap_target_sprite_index = sprite_idx;
     return ap_pathfind_local(screen, link, ap_sprites[sprite_idx].tl, ap_sprites[sprite_idx].br, true);
 }
 
@@ -3113,9 +3138,21 @@ ap_map_record_transition_from(struct ap_node * src_node)
     return 0;
 }
 
+void
+ap_node_islocked_print(struct ap_node * node) {
+    bool unlockable;
+    const struct ap_room_tag * unlock_tag;
+    bool islocked = ap_node_islocked(node, &unlockable, &unlock_tag);
+    LOG("locked: %u; unlockable: %u; room tag: %s",
+            islocked, unlockable, ap_room_tag_print(unlock_tag));
+}
+
 bool
-ap_node_islocked(struct ap_node * node, bool *unlockable_out) {
+ap_node_islocked(struct ap_node * node, bool *unlockable_out, const struct ap_room_tag ** unlock_tag_out) {
+    assert(unlockable_out != NULL);
+    assert(unlock_tag_out != NULL);
     *unlockable_out = false;
+    *unlock_tag_out = false;
 
     if (node->type == NODE_KEYBLOCK) {
         // Requires Big Key for dungeon
@@ -3127,6 +3164,15 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out) {
     // Is locked or unlockable
     if (node->type != NODE_TRANSITION)
         return false;
+
+    const struct ap_room_tag * unlock_tag = node->screen->room_tags[0];
+    if (unlock_tag == NULL || unlock_tag->result != ROOM_RESULT_OPEN_DOORS) {
+        unlock_tag = node->screen->room_tags[1];
+    }
+    if (unlock_tag == NULL || unlock_tag->result != ROOM_RESULT_OPEN_DOORS) {
+        unlock_tag = NULL;
+    }
+    *unlock_tag_out = unlock_tag;
 
     if (!XYEQ(node->locked_xy, XY(0, 0))) {
         uint8_t lock_attr = ap_map_attr(node->locked_xy);
@@ -3179,7 +3225,31 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out) {
                 }
             }
         }
-        *unlockable_out = (node->lock_node != NULL);
+        if (unlock_tag != NULL) {
+            switch (unlock_tag->action) {
+            case ROOM_ACTION_KILL_ENEMY:
+                *unlockable_out = true;
+                break;
+            case ROOM_ACTION_SWITCH_TOGGLE:
+            case ROOM_ACTION_SWITCH_HOLD:
+                *unlockable_out = (node->lock_node != NULL);
+                break;
+            case ROOM_ACTION_OPEN_CHEST:
+            case ROOM_ACTION_LIGHT_TORCHES:
+            case ROOM_ACTION_MOVE_BLOCK:
+            case ROOM_ACTION_PULL_LEVER:
+            case ROOM_ACTION_CLEAR_QUADRANT:
+            case ROOM_ACTION_CLEAR_ROOM:
+            case ROOM_ACTION_CLEAR_LEVEL:
+            case ROOM_ACTION_TURN_OFF_WATER:
+            case ROOM_ACTION_TURN_ON_WATER:
+            case ROOM_ACTION_NONE:
+                *unlockable_out = false;
+                break;
+            }
+        } else {
+            *unlockable_out = false;
+        }
         if (*ap_ram.room_trap_doors && node->screen->dungeon_room == *ap_ram.dungeon_room) {
             return true;
         }
