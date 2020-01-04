@@ -25,6 +25,7 @@ Videos in action
 [All media](https://github.com/zbanks/alttp/tree/media)
 
 - [24 minutes of gameplay, from 2020/10/04, sped up 10x](https://github.com/zbanks/alttp/blob/media/alttp_20200104_10x.mp4)
+    - Randomizer Settings: Open mode, Sword on Uncle, No Glitches, Defeat Ganon
     - Cheating: infinite health, bombs, and arrows
     - Hits about ~45 checks, clears Eastern Palace
 
