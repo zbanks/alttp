@@ -19,6 +19,7 @@ The bot is written as a library that gets linked into a slightly-modified [Snes9
 
 The overall code quality is pretty bad, and is mostly shaped around rapid iteration.
 
+
 Videos in action
 ----------------
 
@@ -29,4 +30,11 @@ Videos in action
     - Cheating: infinite health, bombs, and arrows
     - Hits about ~45 checks, clears Eastern Palace
 
+Credits
+-------
 
+This wouldn't be possible without the crazy amount of reverse-engineering effort put into this game. 
+
+- MathOnNapkin's Zelda 3 RAM/ROM/SRAM documentation
+- MathOnNapkin's Zelda 3 Annotated Disassembly
+- wiiqwertyuiop's Zelda 3 Annotated Disassembly
