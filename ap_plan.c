@@ -604,11 +604,25 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         break;
     case TASK_SCRIPT_KILLALL:
     case TASK_SCRIPT_KILLDROPS:
+        if (*ap_ram.inventory_sword == 0) {
+            ap_req_require(&ap_active_goal->req, 0, REQUIREMENT_SWORD);
+            return RC_FAIL;
+        }
         if (task->state == -100) {
             if (task->timeout == 1) {
                 return RC_DONE;
             }
             break;
+        }
+        if (ap_ram.overlord_types[7] == 0x19) {
+            if (*ap_ram.room_chest_state & 0x80) {
+                return RC_DONE;
+            }
+            // Wait for armos knights to spawn
+            //task->timeout = 2;
+            //if (!ap_sprites[0].active) {
+            //    break;
+            //}
         }
         bool no_sword = false;
         if (task->state == 0 || task->timeout == 1) {
@@ -660,7 +674,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->timeout = MIN(20, MAX(8, rc));
             task->state++;
         } 
-        if (task->state == 2000) { // Actual timeout
+        if (task->state == 8000) { // Actual timeout
             LOG("timeout");
             return RC_FAIL;
         }
@@ -1028,9 +1042,7 @@ done:;
         task_timeout = LL_PEEK(ap_task_list)->timeout;
     }
     struct ap_screen * screen = ap_update_map_screen(NULL);
-    INFO("Plan: %s, %s (%d) %s %s", goal_name, task_name, task_timeout,
-            ap_room_tag_print(screen->room_tags[0]),
-            ap_room_tag_print(screen->room_tags[1]));
+    INFO("Plan: %s via %s (%d)", goal_name, task_name, task_timeout);
 }
 
 void

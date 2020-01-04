@@ -32,7 +32,7 @@ const char * ap_req_print(const struct ap_req * req);
     X(0, KEY) \
     X(0, GREEN_PENDANT) \
     X(0, ALL_PENDANTS) \
-    X(0, SIXSEVEN_CRYSTALS) \
+    X(0, FIVESIX_CRYSTALS) \
     X(0, ALL_CRYSTALS) \
     X(0, GLOVES_1) \
     X(0, GLOVES_2) \

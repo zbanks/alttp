@@ -55,6 +55,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLDROPS,
         .name = "HC kill guard for key",
     },
+    /*
     {
         .start_tl = XY(0x4878, 0x0fb0),
         .start_item = -1,
@@ -69,6 +70,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "HC kill blue guard for door",
     },
+    */
     {
         .start_tl = XY(0x4250, 0x1060),
         .start_item = -1,
@@ -83,6 +85,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_SEQUENCE,
         .name = "Jump into Kak well",
     },
+    /*
     {
         .start_tl = XY(0x5a78, 0x25c0),
         .start_item = -1,
@@ -90,6 +93,7 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "Mini Moldorm Cave",
     },
+    */
     /*
     {
         .start_tl = XY(0x8278, 0x1580),
@@ -113,7 +117,6 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "EP Armos Knights Boss",
     },
-    /*
     {
         .start_tl = XY(0x83c0, 0x1b80),
         .start_item = INVENTORY_BOW,
@@ -121,7 +124,6 @@ static const struct ap_script ap_scripts[] = {
         .type = SCRIPT_KILLALL,
         .name = "EP Red Igor Room",
     },
-    */
     /* Need to bring old man to "door 0x30"
     {
         .start_tl = XY(0x4278, 0x1fc6),
@@ -803,7 +805,7 @@ ap_follow_targets(uint16_t * joypad)
                 if (!ap_sprites[i].active) {
                     continue;
                 }
-                if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY) {
+                if ((ap_sprites[i].attrs & SPRITE_ATTR_ENMY) && !(ap_sprites[i].attrs & SPRITE_ATTR_NVUL)) {
                     if (XYL1BOXDIST(link_sword_up, ap_sprites[i].tl, ap_sprites[i].br) <= 8) {
                         JOYPAD_MASH(B, 0x10); // Sword
                         break;
@@ -1100,8 +1102,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             if (!XYIN(ap_sprites[i].hitbox_tl, screen->tl, screen->br)) {
                 continue;
             }
-            if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY && 
-                ap_sprites[i].state != 0x00) { // dead
+            if (ap_sprites[i].attrs & SPRITE_ATTR_ENMY && ap_sprites[i].active) {
                 struct xy center = XYOP1(XYOP2(ap_sprites[i].hitbox_tl, -, screen->tl), / 8);
                 for (int dx = -4; dx <= 4; dx++) {
                     for (int dy = -4; dy <= 4; dy++) {
@@ -2056,6 +2057,10 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
         // Stateful Fairy Fountain room
         new_node->_debug_blocked = true;
     }
+    if (strcmp(new_node->name, "door 0x11") == 0 || strcmp(new_node->name, "door 0x38") == 0) {
+        // One-way overworld doors
+        new_node->_debug_blocked = true;
+    }
 
     /*
     if (strcmp(new_node->name, "0x198A D 4") == 0) {
@@ -2430,7 +2435,7 @@ ap_map_add_sprite_nodes_to_screen(struct ap_screen * screen) {
     if (new_node == NULL)
         new_node = NONNULL(calloc(1, sizeof *new_node));
 
-    for (size_t i = 0; i < 16; i++) {
+    for (size_t i = 0; i < N_SPRITES; i++) {
         if (ap_sprites[i].type == 0)
             continue;
         if (ap_sprites[i].attrs & SPRITE_ATTR_NODE) {
@@ -2449,6 +2454,30 @@ ap_map_add_sprite_nodes_to_screen(struct ap_screen * screen) {
                 }
                 */
                 snprintf(new_node->name, sizeof new_node->name, "sprite %#x.%#x %s", new_node->sprite_type, new_node->sprite_subtype, ap_sprite_attr_name(ap_sprites[i].attrs));
+                ap_screen_commit_node(screen, &new_node);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < N_ANCILLIA; i++) {
+        if (ap_ancillia[i].type == 0)
+            continue;
+        if (ap_ancillia[i].attrs & SPRITE_ATTR_NODE) {
+            new_node->tl = ap_ancillia[i].tl;
+            if (!XYIN(new_node->tl, screen->tl, screen->br)) {
+                LOG("Ancillia %zu out of screen", i);
+            } else {
+                new_node->type = NODE_SPRITE;
+                new_node->br = ap_ancillia[i].br;
+                new_node->sprite_type = ap_ancillia[i].type;
+                new_node->sprite_subtype = 0;
+                /*
+                if (ap_ancillia[i].attrs & SPRITE_ATTR_TALK) {
+                    new_node->tl = XYOP2(ap_ancillia[i].hitbox_tl, +, XY(0, 16));
+                    new_node->br = XYOP2(ap_ancillia[i].hitbox_tl, +, XY(15, 31));
+                }
+                */
+                snprintf(new_node->name, sizeof new_node->name, "ancillia %#x %s", new_node->sprite_type, ap_sprite_attr_name(ap_ancillia[i].attrs));
                 ap_screen_commit_node(screen, &new_node);
             }
         }
@@ -3143,8 +3172,8 @@ ap_node_islocked_print(struct ap_node * node) {
     bool unlockable;
     const struct ap_room_tag * unlock_tag;
     bool islocked = ap_node_islocked(node, &unlockable, &unlock_tag);
-    LOG("locked: %u; unlockable: %u; room tag: %s",
-            islocked, unlockable, ap_room_tag_print(unlock_tag));
+    LOG("Node: %s; locked: %u; unlockable: %u; room tag: %s",
+            node->name, islocked, unlockable, ap_room_tag_print(unlock_tag));
 }
 
 bool
@@ -3180,7 +3209,8 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out, const struct ap_ro
             return false;
         }
 
-        if (ap_door_attrs[node->door_type] & (DOOR_ATTR_SKEY | DOOR_ATTR_BOMB)) {
+        if (ap_door_attrs[node->door_type] & (DOOR_ATTR_SKEY | DOOR_ATTR_BKEY | DOOR_ATTR_BOMB)) {
+            *unlock_tag_out = NULL;
             if (ap_door_attrs[node->door_type] & DOOR_ATTR_SKEY) {
                 assert_bp(node->screen->dungeon_id < 16);
                 *unlockable_out = ap_ram.sram_dungeon_keys[node->screen->dungeon_id] > 0;
@@ -3318,7 +3348,7 @@ ap_map_import(const char * filename) {
             int rc = sscanf(line, ">0x%hx 0x%hx,0x%hx 0x%hx,0x%hx %hu %hhu %hu",
                 &screen->id, &screen->tl.x, &screen->tl.y, &screen->br.x, &screen->br.y,
                 &screen->dungeon_room, &screen->dungeon_id, &screen->dungeon_tags);
-            assert_bp(rc == 7);
+            assert_bp(rc == 8);
             /*
             if (XYINDOORS(screen->tl)) {
                 screen->dungeon_room = (screen->tl.x - 0x4000) / 0x800;

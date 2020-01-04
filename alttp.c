@@ -28,7 +28,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     static bool has_imported = false;
     if (!has_imported) {
         LOG("importing");
-        //ap_map_import("map.16.txt");
+        ap_map_import("map.19.txt");
         //ap_map_import("map_state.5.00019532.txt");
         //ap_map_import("map_state.7.00021016.txt");
         has_imported = true;
@@ -87,6 +87,11 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     default:
         return;
     }
+    if (*ap_ram.crystal_timer != 0) {
+        INFO("Waiting for crystal to drop (%d)", *ap_ram.crystal_timer);
+        *joypad = 0;
+        return;
+    }
 
     struct xy topleft, bottomright;
     ap_map_bounds(&topleft, &bottomright);
@@ -111,7 +116,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 
     static uint16_t x = 0;
     if (x++ == 40000) { // && false) {
-        ap_print_map_full();
+        //ap_print_map_full();
         //ap_graph_print();
         LOGB("Current requirements satisfied: %s", ap_req_print(NULL));
         char filename[128];

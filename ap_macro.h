@@ -77,3 +77,4 @@ enum rc {
 
 #define NONNULL(x) ({ __typeof__(x) _x = (x); assert((_x) != NULL); _x; })
 #define assert_bp(x) ({ if (!(x)) { __asm__("int3"); volatile bool _marker = 0; } })
+//#define assert_bp(x) ((void) 0)

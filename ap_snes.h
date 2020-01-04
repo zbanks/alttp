@@ -54,15 +54,17 @@ bool ap_manual_mode;
     X(link_on_switch,       uint16_t,  0x7E0430)   \
     X(overworld_index,      uint16_t,  0x7E008A)   \
     X(dungeon_room,         uint16_t,  0x7E00A0)   \
-    X(dungeon_tags,          uint16_t,  0x7E00AE)   \
+    X(dungeon_tags,         uint16_t,  0x7E00AE)   \
     X(menu_part,            uint8_t,   0x7E00C8)   \
     X(current_item,         uint8_t,   0x7E0202)   \
     X(recving_item,         uint8_t,   0x7E02D8)   \
     X(room_state,           uint16_t,  0x7E0400)   \
+    X(room_chest_state,     uint8_t,   0x7E0403)   \
     X(room_layout,          uint8_t,   0x7E040E)   \
     X(room_trap_doors,      uint16_t,  0x7E0468)   \
     X(room_chest_index,     uint16_t,  0x7E0496)   \
     X(room_keyblock_index,  uint16_t,  0x7E0498)   \
+    X(crystal_timer,        uint8_t,   0x7E04C2)   \
     X(room_chest_tilemaps,  uint16_t,  0x7E06E0)   \
     X(dngn_open_doors,      uint16_t,  0x7E068C)   \
     X(sprite_drop,          uint8_t,   0x7E0CBA)   \
@@ -70,6 +72,7 @@ bool ap_manual_mode;
     X(sprite_x_lo,          uint8_t,   0x7E0D10)   \
     X(sprite_y_hi,          uint8_t,   0x7E0D20)   \
     X(sprite_x_hi,          uint8_t,   0x7E0D30)   \
+    X(sprite_spawned,       uint8_t,   0x7E0D80)   \
     X(sprite_state,         uint8_t,   0x7E0DD0)   \
     X(sprite_type,          uint8_t,   0x7E0E20)   \
     X(sprite_subtype1,      uint8_t,   0x7E0E30)   \
@@ -79,6 +82,7 @@ bool ap_manual_mode;
     X(sprite_lower_level,   uint8_t,   0x7E0F20)   \
     X(sprite_hitbox_idx,    uint8_t,   0x7E0F60)   \
     X(overlord_types,       uint8_t,   0x7E0B00)   \
+    X(overlord_timers,      uint8_t,   0x7E0B28)   \
     X(ancillia_bf0,         uint8_t,   0x7E0BF0)   \
     X(ancillia_y_lo,        uint8_t,   0x7E0BFA)   \
     X(ancillia_x_lo,        uint8_t,   0x7E0C04)   \
@@ -402,6 +406,7 @@ enum ap_link_state {
     X(FLLW) /* Thing that can follow you */ \
     X(NODE) /* Worth making a node for */ \
     X(SUBT) /* Has subtype flags */ \
+    X(NVUL) /* Invulnerable, or at least not worth fighting */ \
     X(VBOW) /* Only vunerable to the Bow */ \
 
 enum {
@@ -415,6 +420,7 @@ SPRITE_ATTR_LIST
 #undef X
 };
 
+#define N_SPRITES ((size_t) 16)
 extern struct ap_sprite {
     uint8_t type;
     uint16_t subtype;
@@ -430,7 +436,7 @@ extern struct ap_sprite {
     struct xy hitbox_tl;
     struct xy hitbox_br;
     uint16_t attrs;
-} ap_sprites[16];
+} ap_sprites[N_SPRITES];
 extern bool ap_sprites_changed;
 
 extern struct ap_pushblock {
@@ -458,7 +464,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x0A] = SPRITE_ATTR_ENMY, // Four Shooter Octorock
     [0x0B] = 0, // Chicken / Chicken Transformed into Lady
     [0x0C] = SPRITE_ATTR_ENMY, // Octorock
-    [0x0D] = SPRITE_ATTR_ENMY, // Normal Buzzblob / Morphed Buzzblob (tra la la... look for Sahashrala)
+    [0x0D] = SPRITE_ATTR_ENMY | SPRITE_ATTR_NVUL, // Normal Buzzblob / Morphed Buzzblob (tra la la... look for Sahashrala)
     [0x0E] = SPRITE_ATTR_ENMY, // Plants with big mouths
     [0x0F] = SPRITE_ATTR_ENMY, // Octobaloon (Probably the thing that explodes into 10 others)
 
@@ -529,7 +535,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x4E] = SPRITE_ATTR_ENMY, // Snakebasket
     [0x4F] = SPRITE_ATTR_ENMY, // Blobs?
     
-    [0x50] = SPRITE_ATTR_ENMY, // Metal Balls (in Eastern Palace)
+    [0x50] = SPRITE_ATTR_ENMY | SPRITE_ATTR_NVUL, // Metal Balls (in Eastern Palace)
     [0x51] = SPRITE_ATTR_ENMY, // Armos
     [0x52] = 0, // Giant Zora
     [0x53] = SPRITE_ATTR_ENMY | SPRITE_ATTR_VBOW, // Armos Knights Boss
@@ -872,13 +878,20 @@ INVENTORY_LIST
 
 extern const char * const ap_inventory_names[];
 
+static const uint16_t ap_ancillia_attrs[256] = {
+    // Crystal / Pendant
+    [0x29] = SPRITE_ATTR_NODE | SPRITE_ATTR_ITEM,
+};
+
 #define N_ANCILLIA ((size_t) 10)
 extern struct ap_ancillia {
     uint8_t type;
     uint8_t bf0; // 0xBF0
     struct xy tl;
+    struct xy br;
     struct xy subpixel;
     struct xy velocity;
+    uint16_t attrs;
 } ap_ancillia[N_ANCILLIA];
 
 void ap_ancillia_update();
@@ -969,7 +982,7 @@ static const struct ap_room_tag {
 
     [0x18] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_TURN_OFF_WATER,   .result = ROOM_RESULT_NONE, .unsure = true },
     [0x19] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_TURN_ON_WATER,    .result = ROOM_RESULT_NONE, .unsure = true },
-    [0x1A] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_WATERGATE, .unsure = true },
+    [0x1A] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_WATERGATE }, // Overworld Dam
     [0x1B] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_WATERGATE, .unsure = true },
 
     [0x1C] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_NONE,             .result = ROOM_RESULT_OPEN_WALL, .unsure = true },
@@ -989,16 +1002,16 @@ static const struct ap_room_tag {
     [0x27] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_SWITCH_TOGGLE,    .result = ROOM_RESULT_CHEST },
     [0x28] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_PULL_LEVER,       .result = ROOM_RESULT_OPEN_WALL, .unsure = true },
 
-    [0x29] = { .quadmask = QUAD_A,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x2A] = { .quadmask = QUAD_B,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x2B] = { .quadmask = QUAD_C,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x2C] = { .quadmask = QUAD_D,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x2D] = { .quadmask = QUAD_A | QUAD_C, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x2E] = { .quadmask = QUAD_B | QUAD_D, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x2F] = { .quadmask = QUAD_A | QUAD_B, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x30] = { .quadmask = QUAD_C | QUAD_D, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x31] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_QUADRANT,   .result = ROOM_RESULT_CHEST, .unsure = true },
-    [0x32] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_ROOM,       .result = ROOM_RESULT_CHEST, .unsure = true },
+    [0x29] = { .quadmask = QUAD_A,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST },
+    [0x2A] = { .quadmask = QUAD_B,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST },
+    [0x2B] = { .quadmask = QUAD_C,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST },
+    [0x2C] = { .quadmask = QUAD_D,          .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST },
+    [0x2D] = { .quadmask = QUAD_A | QUAD_C, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST },
+    [0x2E] = { .quadmask = QUAD_B | QUAD_D, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST },
+    [0x2F] = { .quadmask = QUAD_A | QUAD_B, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST },
+    [0x30] = { .quadmask = QUAD_C | QUAD_D, .action = ROOM_ACTION_KILL_ENEMY,       .result = ROOM_RESULT_CHEST },
+    [0x31] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_QUADRANT,   .result = ROOM_RESULT_CHEST },
+    [0x32] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_CLEAR_ROOM,       .result = ROOM_RESULT_CHEST },
 
     [0x33] = { .quadmask = QUAD_ALL,        .action = ROOM_ACTION_LIGHT_TORCHES,    .result = ROOM_RESULT_OPEN_DOORS, },
 

@@ -66,8 +66,9 @@ AP_RAM_LIST
     //ap_emu->load("well");
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
-    //ap_emu->load("home");
-    ap_emu->load("epsta");
+    ap_emu->load("home");
+    //ap_emu->load("epsta");
+    //ap_emu->load("prearmos");
     //ap_emu->load("cave_front");
     //ap_emu->load("cave");
     //ap_emu->load("hc_stairs");
@@ -122,14 +123,17 @@ ap_sprites_update() {
             continue;
 
         sprite->type = ap_ram.sprite_type[i];
+        sprite->state = ap_ram.sprite_state[i];
         sprite->subtype = ap_ram.sprite_subtype1[i] | (ap_ram.sprite_subtype2[i] << 8);
         sprite->interaction = ap_ram.sprite_interaction[i];
         sprite->hp = ap_ram.sprite_hp[i];
         sprite->drop = ap_ram.sprite_drop[i] == 0x03 ? 0 : ap_ram.sprite_drop[i];
 
         sprite->attrs = ap_sprite_attrs_for_type(sprite->type, sprite->subtype, *ap_ram.dungeon_room);
+        bool spawned = ap_ram.sprite_spawned[i];
 
         switch (sprite->type) {
+                /*
             case 0x41: // Guard-like sprites
             case 0x42:
             case 0x43:
@@ -154,8 +158,9 @@ ap_sprites_update() {
                 }
                 break;
             case 0x53: // Armos Knights
-                sprite->active = sprite->hp > 0;
+                sprite->active = sprite->hp > 0; // && spawned;
                 break;
+                */
             default:
                 if (sprite->attrs & SPRITE_ATTR_TALK) {
                     sprite->active = true;
@@ -244,6 +249,7 @@ ap_sprites_print()
             ap_sprites[i].interaction, ap_sprites[i].hp, ap_sprites[i].drop,
             PRIBBVF(ap_sprites[i]), XYL1BOXDIST(link, ap_sprites[i].tl, ap_sprites[i].br));
     }
+    //LOG("Overlord %#x timer: %#x", ap_ram.overlord_types[7], ap_ram.overlord_timers[7]);
 
     // This only works inside
     // The blocks don't seem to update in real-time so not sure if this
@@ -287,10 +293,21 @@ ap_ancillia_update() {
     for (size_t i = 0; i < N_ANCILLIA; i++) {
         struct ap_ancillia * ancillia = &ap_ancillia[i];
         ancillia->type = ap_ram.ancillia_type[i];
+        ancillia->attrs = ap_ancillia_attrs[ancillia->type];
         ancillia->bf0 = ap_ram.ancillia_bf0[i];
-        ancillia->tl = XY(ap_ram.ancillia_x_lo[i], ap_ram.ancillia_y_hi[i]);
+
+        ancillia->tl = XY(ap_ram.ancillia_x_lo[i], ap_ram.ancillia_y_lo[i]);
         ancillia->tl.x += ap_ram.ancillia_x_hi[i] << 8u;
         ancillia->tl.y += ap_ram.ancillia_y_hi[i] << 8u;
+        if (*ap_ram.in_building) {
+            ancillia->tl.x = ((ancillia->tl.x & ~0x1FF) << 2) | (ancillia->tl.x & 0x1FF);
+            ancillia->tl.x += 0x4000;
+            if (ap_ram.ancillia_bf0[i]) {
+                ancillia->tl.x += 0x200;
+            }
+        }
+        ancillia->br = XYOP1(ancillia->tl, +15);
+
         ancillia->subpixel = XY(ap_ram.ancillia_x_sub[i], ap_ram.ancillia_y_sub[i]);
         ancillia->velocity = XY(ap_ram.ancillia_x_vel[i], ap_ram.ancillia_y_vel[i]);
     }

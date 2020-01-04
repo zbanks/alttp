@@ -60,7 +60,7 @@ void ap_req_update() {
         reqmask_set(&current_reqmask, REQUIREMENT_ALL_PENDANTS);
     }
     if ((*ap_ram.sram_crystals & 0x05) == 0x05) {
-        reqmask_set(&current_reqmask, REQUIREMENT_SIXSEVEN_CRYSTALS);
+        reqmask_set(&current_reqmask, REQUIREMENT_FIVESIX_CRYSTALS);
     }
     if ((*ap_ram.sram_crystals & 0x7F) == 0x7F) {
         reqmask_set(&current_reqmask, REQUIREMENT_ALL_CRYSTALS);
