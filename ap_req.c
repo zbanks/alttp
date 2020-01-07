@@ -1,4 +1,5 @@
 #include "ap_req.h"
+#include "bm.h"
 
 const char * const ap_requirement_names[] = {
 #define X(i, n) [CONCAT(REQUIREMENT_, n)] = STRINGIFY(n),
@@ -10,22 +11,23 @@ REQUIREMENT_LIST
 static struct ap_reqmask current_reqmask = {0};
 
 static void reqmask_set(struct ap_reqmask * mask, enum ap_requirement req) {
-    mask->bits |= 1ul << req;
+    assert(req < _REQUIREMENT_MAX);
+    BM_SET(mask->bits, req);
 }
 
 static bool reqmask_match(const struct ap_reqmask * src) {
-    if (src->bits == 0) return false;
-    return (~src->bits | current_reqmask.bits) == (uint64_t) -1;
+    if (BM_ISEMPTY(src->bits)) return false;
+    return BM_ISMATCH(src->bits, current_reqmask.bits);
 }
 
 static void reqmask_print(const struct ap_reqmask * mask, char **buf_p) {
     char * buf = *buf_p;
-    if (mask->bits == 0) {
+    if (BM_ISEMPTY(mask->bits)) {
         buf += sprintf(buf, "None");
     } else {
         bool first = true;
         for (int i = 0; i < _REQUIREMENT_MAX; i++) {
-            if (mask->bits & (1ul << i)) {
+            if (BM_ISSET(mask->bits, i)) {
                 if (first) {
                     first = false;
                 } else {
@@ -89,7 +91,7 @@ bool ap_req_is_satisfied(const struct ap_req * req) {
         if (reqmask_match(&req->alternative_requirements[i])) {
             return true;
         }
-        if (req->alternative_requirements[i].bits != 0) {
+        if (!BM_ISEMPTY(req->alternative_requirements[i].bits)) {
             all_zero = false;
         }
     }
@@ -107,7 +109,7 @@ const char * ap_req_print(const struct ap_req * req) {
     *buf++ = '[';
     bool first = true;
     for (size_t i = 0; i < AP_REQ_SLOTS; i++) {
-        if (req->alternative_requirements[i].bits == 0) {
+        if (BM_ISEMPTY(req->alternative_requirements[i].bits)) {
             continue;
         }
         if (first) {

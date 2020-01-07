@@ -8,7 +8,7 @@
 #define AP_REQ_SLOTS ((size_t) 4)
 
 struct ap_reqmask {
-    uint64_t bits;
+    uint64_t bits[1];
 };
 
 struct ap_req {

@@ -8,6 +8,7 @@ C_SRC = \
 	ap_req.c \
 	pm.c \
 	pq.c \
+	lb.c \
 
 OBJECTS = $(C_SRC:%.c=build/%.o)
 TARGET = build/libalttp.a
