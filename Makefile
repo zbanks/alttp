@@ -6,6 +6,7 @@ C_SRC = \
 	ap_snes.c \
 	ap_plan.c \
 	ap_req.c \
+	ap_item.c \
 	pm.c \
 	pq.c \
 	lb.c \
@@ -39,3 +40,6 @@ clean:
 
 $(TARGET): $(OBJECTS)
 	$(AR) cr $@ $^
+
+lb_test: lb.c lb_test.c
+	$(CC) $(CFLAGS) -DLB_DEBUG $+ -o $@

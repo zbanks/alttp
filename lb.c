@@ -12,6 +12,27 @@ lb_init(struct lb * lb, size_t n) {
     assert(n > 0);
     memset(lb, 0, sizeof(*lb));
     lb->size = n;
+    lb->dirty = true;
+    for (size_t x = 0; x < lb->size; x++) {
+        lb->x_root[x] = x;
+        lb->x_has_equivs[x] = false;
+        BM_SET(lb->x_equivs[x], x);
+    }
+}
+
+void
+lb_init_equivalent(struct lb * lb, size_t x0, size_t x1) {
+    assert(x0 < x1);
+    assert(x1 < lb->size);
+    assert(lb->x_root[x0] == x0);
+    assert(!lb->x_has_equivs[x1]);
+    assert(!lb->marked);
+    if (lb->x_root[x1] == x0) return;
+    assert(lb->x_root[x1] == x1);
+
+    lb->x_root[x1] = x0;
+    BM_SET(lb->x_equivs[x0], x1);
+    lb->x_has_equivs[x0] = true;
 }
 
 static void
@@ -44,8 +65,18 @@ lb_mark_positive(struct lb * lb, size_t x, size_t y) {
     }
     assert(!BM_ISSET(lb->halfs[1].paired, y));
 
-    lb_mark_positive_half(lb, 0, x, y);
-    lb_mark_positive_half(lb, 1, y, x);
+    for (size_t i = lb->x_root[x]; i < lb->size; i++) {
+        if (!BM_ISSET(lb->x_equivs[x], i)) {
+            continue;
+        }
+        if (BM_ISSET(lb->halfs[0].paired, i)) {
+            continue;
+        }
+        lb_mark_positive_half(lb, 0, i, y);
+        lb_mark_positive_half(lb, 1, y, i);
+        return;
+    }
+    assert(0);
 }
 
 static void
@@ -63,8 +94,16 @@ void
 lb_mark_negative(struct lb * lb, size_t x, size_t y) {
     assert(x < lb->size);
     assert(y < lb->size);
-    lb_mark_negative_half(lb, 0, x, y);
-    lb_mark_negative_half(lb, 1, y, x);
+    for (size_t i = lb->x_root[x]; i < lb->size; i++) {
+        if (!BM_ISSET(lb->x_equivs[x], i)) {
+            continue;
+        }
+        lb_mark_negative_half(lb, 0, i, y);
+        lb_mark_negative_half(lb, 1, y, i);
+        if (!lb->x_has_equivs[x]) {
+            break;
+        }
+    }
 }
 
 static void
@@ -125,6 +164,47 @@ lb_deduce_clique(struct lb * lb, bool h) {
     }
 }
 
+static void
+lb_deduce_equivalents(struct lb * lb) {
+    for (size_t x = 0; x < lb->size; x++) {
+        if (!lb->x_has_equivs[x]) {
+            continue;
+        }
+
+        uint64_t bs_union[LB_BM_SIZE];
+        size_t union_count = 0;
+        for (size_t i = lb->x_root[x]; i < lb->size; i++) {
+            if (!BM_ISSET(lb->x_equivs[x], i)) {
+                continue;
+            }
+            if (BM_ISSET(lb->halfs[0].paired, i)) {
+                continue;
+            }
+            if (union_count == 0) {
+                memcpy(bs_union, lb->halfs[0].bs[i], sizeof(bs_union));
+            } else {
+                BM_ANDEQ(bs_union, lb->halfs[0].bs[i]);
+            }
+            union_count++;
+        }
+        if (union_count < 2) {
+            // Would be handled by lb_deduce_unique
+            continue;
+        }
+        size_t c = lb->size - BM_POPCOUNT(bs_union);
+        assert(c >= union_count);
+        if (c == union_count) {
+            for (size_t i = lb->x_root[x]; i < lb->size; i++) {
+                if (BM_ISSET(lb->halfs[0].paired, i)) {
+                    continue;
+                }
+                lb_mark_positive(lb, i, BM_FFZ(lb->halfs[0].bs[i]));
+            }
+            
+        }
+    }
+}
+
 void
 lb_deduce(struct lb * lb) {
     while (lb->dirty) {
@@ -138,6 +218,9 @@ lb_deduce(struct lb * lb) {
         lb_deduce_clique(lb, 0);
         if (lb->dirty) continue;
         lb_deduce_clique(lb, 1);
+        if (lb->dirty) continue;
+
+        lb_deduce_equivalents(lb);
         if (lb->dirty) continue;
     }
 }
@@ -264,6 +347,26 @@ lb_selftest() {
 
     lb_mark_negative(lb, 0, 0);
     lb_selftest_print(lb, "full solve on 5");
+
+    // 6x6 with equivs
+    lb_init(lb, 6);
+    lb_init_equivalent(lb, 0, 1);
+    lb_init_equivalent(lb, 0, 2);
+    lb_init_equivalent(lb, 0, 3);
+    lb_init_equivalent(lb, 0, 4);
+    lb_selftest_print(lb, "Init");
+
+    lb_mark_negative(lb, 0, 1);
+    lb_selftest_print(lb, "Solved");
+
+    lb_init(lb, 6);
+    lb_init_equivalent(lb, 0, 1);
+    lb_init_equivalent(lb, 0, 2);
+    lb_init_equivalent(lb, 0, 3);
+    lb_init_equivalent(lb, 0, 4);
+    lb_init_equivalent(lb, 0, 5);
+    lb_selftest_print(lb, "Fully solved");
+    return;
 
     // 256x256 test
     lb_init(lb, 256);
