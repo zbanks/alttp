@@ -866,11 +866,16 @@ static const uint16_t ap_door_attrs[256] = {
     X(0x12, BLUE_CANE) \
     X(0x13, MAGIC_CAPE) \
     X(0x14, MIRROR) \
+    X(0x15, GLOVES) \
     X(0x16, BOOTS) \
     X(0x17, FLIPPERS) \
+    X(0x18, MOON_PEARL) \
     X(0x1A, SWORD) \
+    X(0x1B, SHIELD) \
+    X(0x1C, ARMOR) \
+    X(0x1D, BOTTLE) /* 4 bottles */\
 
-enum {
+enum ap_inventory {
 #define X(i, n) CONCAT(INVENTORY_, n) = i,
 INVENTORY_LIST
 #undef X
@@ -1031,3 +1036,28 @@ static const struct ap_room_tag {
 };
 
 const char * ap_room_tag_print(const struct ap_room_tag * tag);
+
+#define DUNGEON_LIST \
+    X(SEWERS, "Sr") \
+    X(HYRULE_CASTLE, "HC") \
+    X(EASTERN_PALACE, "EP") \
+    X(DESERT_PALACE, "DP") \
+    X(AGAHANIMS_TOWER, "CT") /* AKA "hyrule castle 2" & "Castle Tower" */ \
+    X(SWAMP_PALACE, "SP") \
+    X(PALACE_OF_DARKNESS, "PoD") \
+    X(MISERY_MIRE, "MM") \
+    X(SKULL_WOODS, "SW") \
+    X(ICE_PALACE, "IP") \
+    X(TOWER_OF_HERA, "ToH") \
+    X(THEIVES_TOWN, "TT") /* AKA "gargoyle's domain" */ \
+    X(TURTLE_ROCK, "TR") \
+    X(GANONS_TOWER, "GT") \
+
+enum ap_dungeon {
+#define X(name, abbr) CONCAT(DUNGEON_, name),
+DUNGEON_LIST
+#undef X
+};
+
+extern const char * const ap_dungeon_names[];
+extern const char * const ap_dungeon_abbrs[];

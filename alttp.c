@@ -1,10 +1,11 @@
 #include "alttp_public.h"
+#include "ap_item.h"
 #include "ap_macro.h"
 #include "ap_map.h"
 #include "ap_math.h"
-#include "ap_snes.h"
 #include "ap_plan.h"
 #include "ap_req.h"
+#include "ap_snes.h"
 
 void
 ap_tick(uint32_t frame, uint16_t * joypad) {
@@ -14,6 +15,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     *ap_emu->info_string_ptr = ap_info_string;
     ap_sprites_update();
     ap_ancillia_update();
+    ap_item_update();
 
     // Cheating!
     //*(uint8_t *) (uintptr_t) ap_ram.ignore_sprites = 0xFF;

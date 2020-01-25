@@ -1,7 +1,7 @@
 * DONE: With diagonal movement, need to check the corners
-* DONE: Mark how to open doors in rooms (e.g. defeat all enemies)
+* Mark how to open doors in rooms (e.g. defeat all enemies)
     - Temporary workaround: SCRIPT_KILLALL
-    - Future: add TASK_KILLALL; use dungeon room tags
+    - Future: add TASK_KILLALL
 * DONE: Defeat all the stalfos in that one room in eastern palace
 * DONE: Handle/detect big chest
 * DONE: Bomb walls
@@ -34,22 +34,15 @@
 * Screen ID 0x0400 (north of Kak) has 2 transitions on the top edge that are 'guarded' by 0x02 tiles
 * DONE: Key doors marked as locked right as they are being opened
 * DONE: Bombing walls; may need to go back to node before trying to bomb it
-* DONE: Read in accurate Big Key state
+* Read in accurate Big Key state
 * Use sprite.drop to automatically add a KILLDROPS task/goal/script
-* DONE: Know how to use the Bow to kill Red Igors (+ Armos Knights?)
+* Know how to use the Bow to kill Red Igors (+ Armos Knights?)
 * Get stuck after jumping into Kak well
-    - Seems to be solved if there is the transition node D out of the room
 * Script the race game
-* DONE: Need to reapply KILLALL script in certain rooms on re-entry
+* Need to reapply KILLALL script in certain rooms on re-entry
     - Use dungeon_tags to know what special actions need to happen in each room (kill enemies; push switch; etc; Dungeon_TagRoutines)
 * Blasted into "blocking" sprite; need to allow escaping
 * Overworld holes
 * Stairs up to top of HC/escape are broken
 * Second dam check
-* DONE: Master Sword barrier on HC
-* Add CLEAR_LEVEL goals
-* DONE: Get crystal after boss is defeated
-* Handle transition after getting crystal from boss
-* Aganim's tower, 3rd room:
-    - Stairs aren't detected correctly
-    - Need to kill enemies for chest to appear
+* Master Sword barrier on HC
