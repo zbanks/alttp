@@ -1,5 +1,6 @@
 #include <string.h>
 #include "ap_map.h"
+#include "ap_item.h"
 #include "ap_math.h"
 #include "ap_macro.h"
 #include "ap_snes.h"
@@ -1986,7 +1987,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
     }
     */
 
-    // Add goals
+    // Add goals & locations
     switch (new_node->type) {
     case NODE_TRANSITION:
         if (add_explore_goals_global || (screen->info != NULL && screen->info->add_explore_goals)) {
@@ -1995,9 +1996,12 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
         }
         break;
     case NODE_ITEM:
+        //ap_item_loc_add(new_node);
         new_node->goal = ap_goal_add(GOAL_PICKUP, new_node);
         break;
     case NODE_CHEST:
+        new_node->locked_xy = XYOP2(new_node->tl, -, XY(0, 16));
+        ap_item_loc_add(new_node);
         new_node->goal = ap_goal_add(GOAL_CHEST, new_node);
         break;
     case NODE_KEYBLOCK:
@@ -2008,6 +2012,7 @@ ap_screen_add_raw_node(struct ap_screen * screen, struct ap_node * new_node)
         break;
     case NODE_SPRITE:;
         uint16_t attrs = ap_sprite_attrs_for_type(new_node->sprite_type, new_node->sprite_subtype, screen->dungeon_room);
+        ap_item_loc_add(new_node);
         if (attrs & SPRITE_ATTR_TALK) {
             new_node->goal = ap_goal_add(GOAL_NPC, new_node);
         } else if (attrs & SPRITE_ATTR_ITEM)  {
@@ -3191,57 +3196,64 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out, const struct ap_ro
     }
 
     // Is locked or unlockable
-    if (node->type != NODE_TRANSITION)
+    if (node->type != NODE_CHEST && node->type != NODE_TRANSITION) {
         return false;
+    }
 
     const struct ap_room_tag * unlock_tag = node->screen->room_tags[0];
-    if (unlock_tag == NULL || unlock_tag->result != ROOM_RESULT_OPEN_DOORS) {
+    if (unlock_tag == NULL || 
+        (node->type == NODE_TRANSITION && unlock_tag->result != ROOM_RESULT_OPEN_DOORS) ||
+        (node->type == NODE_CHEST && unlock_tag->result != ROOM_RESULT_CHEST)) {
         unlock_tag = node->screen->room_tags[1];
     }
-    if (unlock_tag == NULL || unlock_tag->result != ROOM_RESULT_OPEN_DOORS) {
+    if (unlock_tag == NULL || 
+        (node->type == NODE_TRANSITION && unlock_tag->result != ROOM_RESULT_OPEN_DOORS) ||
+        (node->type == NODE_CHEST && unlock_tag->result != ROOM_RESULT_CHEST)) {
         unlock_tag = NULL;
     }
     *unlock_tag_out = unlock_tag;
 
     if (!XYEQ(node->locked_xy, XY(0, 0))) {
         uint8_t lock_attr = ap_map_attr(node->locked_xy);
-        if (lock_attr < 0xF0) {
-            return false;
-        }
-
-        if (ap_door_attrs[node->door_type] & (DOOR_ATTR_SKEY | DOOR_ATTR_BKEY | DOOR_ATTR_BOMB)) {
-            *unlock_tag_out = NULL;
-            if (ap_door_attrs[node->door_type] & DOOR_ATTR_SKEY) {
-                assert_bp(node->screen->dungeon_id < 16);
-                *unlockable_out = ap_ram.sram_dungeon_keys[node->screen->dungeon_id] > 0;
-            } else if (ap_door_attrs[node->door_type] & DOOR_ATTR_BKEY) {
-                assert_bp(node->screen->dungeon_id < 16);
-                uint16_t bit = 1 << (15 - node->screen->dungeon_id);
-                *unlockable_out =  *ap_ram.sram_dungeon_bigkeys & bit;
-            } else if (ap_door_attrs[node->door_type] & DOOR_ATTR_BOMB) {
-                *unlockable_out = true;
+        if (node->type == NODE_TRANSITION) {
+            if (lock_attr < 0xF0) {
+                return false;
             }
 
-            uint16_t bit = 0;
-            switch (node->tile_attr) {
-            case 0xF8: bit = 0x8000; break; // contradictory; maybe 0x1000?
-            case 0xF0: bit = 0x8000; break; // 
-
-            case 0xF7: bit = 0x2000; break; // guess
-            case 0xF6: bit = 0x4000; break; // guess
-            case 0xF5: bit = 0x8000; break; // guess
-            case 0xF1: bit = 0x2000; break; // guess
-            case 0xF2: bit = 0x4000; break; // guess
-            case 0xF3: bit = 0x8000; break; // guess
-            }
-            assert_bp(bit != 0);
-            if (bit != 0) {
-                uint16_t state = ap_ram.sram_room_state[node->screen->dungeon_room];
-                if (node->screen->dungeon_room == *ap_ram.dungeon_room) {
-                    // Read from RAM instead of SRAM
-                    state = *ap_ram.room_state;
+            if (ap_door_attrs[node->door_type] & (DOOR_ATTR_SKEY | DOOR_ATTR_BKEY | DOOR_ATTR_BOMB)) {
+                *unlock_tag_out = NULL;
+                if (ap_door_attrs[node->door_type] & DOOR_ATTR_SKEY) {
+                    assert_bp(node->screen->dungeon_id < 16);
+                    *unlockable_out = ap_ram.sram_dungeon_keys[node->screen->dungeon_id] > 0;
+                } else if (ap_door_attrs[node->door_type] & DOOR_ATTR_BKEY) {
+                    assert_bp(node->screen->dungeon_id < 16);
+                    uint16_t bit = 1 << (15 - node->screen->dungeon_id);
+                    *unlockable_out =  *ap_ram.sram_dungeon_bigkeys & bit;
+                } else if (ap_door_attrs[node->door_type] & DOOR_ATTR_BOMB) {
+                    *unlockable_out = true;
                 }
-                return !(state & bit);
+
+                uint16_t bit = 0;
+                switch (node->tile_attr) {
+                case 0xF8: bit = 0x8000; break; // contradictory; maybe 0x1000?
+                case 0xF0: bit = 0x8000; break; // 
+
+                case 0xF7: bit = 0x2000; break; // guess
+                case 0xF6: bit = 0x4000; break; // guess
+                case 0xF5: bit = 0x8000; break; // guess
+                case 0xF1: bit = 0x2000; break; // guess
+                case 0xF2: bit = 0x4000; break; // guess
+                case 0xF3: bit = 0x8000; break; // guess
+                }
+                assert_bp(bit != 0);
+                if (bit != 0) {
+                    uint16_t state = ap_ram.sram_room_state[node->screen->dungeon_room];
+                    if (node->screen->dungeon_room == *ap_ram.dungeon_room) {
+                        // Read from RAM instead of SRAM
+                        state = *ap_ram.room_state;
+                    }
+                    return !(state & bit);
+                }
             }
         }
 
@@ -3280,11 +3292,15 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out, const struct ap_ro
         } else {
             *unlockable_out = false;
         }
-        if (*ap_ram.room_trap_doors && node->screen->dungeon_room == *ap_ram.dungeon_room) {
+        if (node->type == NODE_TRANSITION && *ap_ram.room_trap_doors && node->screen->dungeon_room == *ap_ram.dungeon_room) {
             return true;
+        }
+        if (node->type == NODE_CHEST) {
+            return !(ap_tile_attrs[lock_attr] & TILE_ATTR_CHST);
         }
         return false;
     }
+    assert(node->type == NODE_TRANSITION);
 
     // Overworld overlays (bombable walls)
     if (node->lock_node != NULL && node->lock_node->type == NODE_OVERLAY) {

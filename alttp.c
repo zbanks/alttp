@@ -61,6 +61,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     }
     */
     *joypad = 0;
+    INFO("citem: %#x; %#x %#x %#x", *ap_ram.current_item, *ap_ram.module_index, *ap_ram.submodule_index, *ap_ram.link_state);
 
 // 0x07 In house/dungeon
 // 0x09 In OW
@@ -89,8 +90,14 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     default:
         return;
     }
-    if (*ap_ram.crystal_timer != 0) {
-        INFO("Waiting for crystal to drop (%d)", *ap_ram.crystal_timer);
+    static int extra_crystal_time = 0;
+    if (*ap_ram.crystal_timer != 0 || extra_crystal_time != 0) {
+        if (*ap_ram.crystal_timer != 0) {
+            extra_crystal_time = 200;
+        } else {
+            extra_crystal_time--;
+        }
+        INFO("Waiting for crystal to drop (%d, %d)", *ap_ram.crystal_timer, extra_crystal_time);
         *joypad = 0;
         return;
     }
@@ -127,8 +134,9 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         x = 0;
     }
 
+    INFO("citem: %#x; %#x %#x %#x", *ap_ram.current_item, *ap_ram.module_index, *ap_ram.submodule_index, *ap_ram.link_state);
     //LOG("Link %d %d %u %u", *ap_ram.link_dx, *ap_ram.link_dy, *ap_ram.link_x, *ap_ram.link_y);
-    //INFO("citem: %#x", *ap_ram.current_item);
+    //INFO("item: %#x", *ap_ram.recving_item);
 
     //INFO_HEXDUMP(b);
     if (frame % 2) {

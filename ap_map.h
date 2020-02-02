@@ -79,6 +79,7 @@ struct ap_node {
     struct ap_node * lock_node;
     const struct ap_script * script;
     struct ap_goal * goal;
+    struct ap_item_loc * item_loc;
     uint8_t overlay_index;
 
     enum ap_node_type {

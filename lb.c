@@ -55,9 +55,18 @@ void
 lb_mark_positive(struct lb * lb, size_t x, size_t y) {
     assert(x < lb->size);
     assert(y < lb->size);
+
+    if (lb->x_has_equivs[x]) {
+        size_t x_original = x;
+        while (BM_ISSET(lb->halfs[0].paired, x)) {
+            x++;
+            assert(x < lb->size && lb->x_root[x] == x_original);
+        }
+    }
+
     assert(!BM_ISSET(lb->halfs[0].bs[x], y));
     assert(!BM_ISSET(lb->halfs[1].bs[y], x));
-    if (BM_ISSET(lb->halfs[0].paired, x)) {
+    if (BM_ISSET(lb->halfs[1].paired, y)) {
         assert(BM_ISSET(lb->halfs[1].paired, y));
         assert(lb->halfs[0].pair[x] == y);
         assert(lb->halfs[1].pair[y] == x);
@@ -195,6 +204,9 @@ lb_deduce_equivalents(struct lb * lb) {
         assert(c >= union_count);
         if (c == union_count) {
             for (size_t i = lb->x_root[x]; i < lb->size; i++) {
+                if (BM_ISSET(bs_union, i)) {
+                    continue;
+                }
                 if (BM_ISSET(lb->halfs[0].paired, i)) {
                     continue;
                 }
@@ -366,6 +378,31 @@ lb_selftest() {
     lb_init_equivalent(lb, 0, 4);
     lb_init_equivalent(lb, 0, 5);
     lb_selftest_print(lb, "Fully solved");
+
+    // 6x6, replicate CT 2 key issue
+    lb_init(lb, 6);
+    lb_init_equivalent(lb, 0, 1);
+    lb_selftest_print(lb, "Init");
+    
+    lb_mark_negative(lb, 0, 2);
+    lb_mark_negative(lb, 0, 3);
+    lb_mark_negative(lb, 0, 4);
+    lb_mark_negative(lb, 0, 5);
+    lb_selftest_print(lb, "Step 2");
+
+    // 5x5, mark equivalents positive
+    lb_init(lb, 5);
+    lb_init_equivalent(lb, 0, 1);
+    lb_init_equivalent(lb, 0, 2);
+    lb_selftest_print(lb, "Init");
+
+    lb_mark_positive(lb, 0, 0);
+    lb_mark_positive(lb, 1, 1);
+    lb_selftest_print(lb, "Step 2");
+
+    lb_mark_positive(lb, 0, 2);
+    lb_selftest_print(lb, "Step 3");
+
     return;
 
     // 256x256 test

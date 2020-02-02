@@ -39,10 +39,13 @@
 * Know how to use the Bow to kill Red Igors (+ Armos Knights?)
 * Get stuck after jumping into Kak well
 * Script the race game
-* Need to reapply KILLALL script in certain rooms on re-entry
+* DONE: Need to reapply KILLALL script in certain rooms on re-entry
     - Use dungeon_tags to know what special actions need to happen in each room (kill enemies; push switch; etc; Dungeon_TagRoutines)
-* Blasted into "blocking" sprite; need to allow escaping
+* Pushed into "blocking" sprite; need to allow escaping
 * Overworld holes
 * Stairs up to top of HC/escape are broken
 * Second dam check
-* Master Sword barrier on HC
+* DONE: Master Sword barrier on HC
+* Use map to lookup crystals/pendants
+* Mark getting crystal/pendant
+* AgTower long room is broken; has extra transition?

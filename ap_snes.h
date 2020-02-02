@@ -93,6 +93,7 @@ bool ap_manual_mode;
     X(ancillia_y_sub,       uint8_t,   0x7E0C36)   \
     X(ancillia_x_sub,       uint8_t,   0x7E0C40)   \
     X(ancillia_type,        uint8_t,   0x7E0C4A)   \
+    X(ancillia_lower_level, uint8_t,   0x7E0C7C)   \
     X(hitbox_x_lo,          uint8_t,   0x06F735)   \
     X(hitbox_x_hi,          uint8_t,   0x06F755)   \
     X(hitbox_width,         uint8_t,   0x06F775)   \
@@ -861,7 +862,7 @@ static const uint16_t ap_door_attrs[256] = {
     X(0x0d, FLUTE) \
     X(0x0e, NET) \
     X(0x0f, BOOK) \
-    X(0x10, BOTTLES) \
+    /*X(0x10, BOTTLES) -- this is just boolean 'has bottles' */ \
     X(0x11, RED_CANE) \
     X(0x12, BLUE_CANE) \
     X(0x13, MAGIC_CAPE) \
@@ -873,12 +874,14 @@ static const uint16_t ap_door_attrs[256] = {
     X(0x1A, SWORD) \
     X(0x1B, SHIELD) \
     X(0x1C, ARMOR) \
-    X(0x1D, BOTTLE) /* 4 bottles */\
+    X(0x1D, BOTTLE) /* 4 bottles 0x1D, 0x1E, 0x1F, 0x20 */\
 
 enum ap_inventory {
+    _INVENTORY_MIN = 1,
 #define X(i, n) CONCAT(INVENTORY_, n) = i,
 INVENTORY_LIST
 #undef X
+    _INVENTORY_MAX
 };
 
 extern const char * const ap_inventory_names[];
@@ -1057,7 +1060,106 @@ enum ap_dungeon {
 #define X(name, abbr) CONCAT(DUNGEON_, name),
 DUNGEON_LIST
 #undef X
+    _DUNGEON_MAX
 };
 
 extern const char * const ap_dungeon_names[];
 extern const char * const ap_dungeon_abbrs[];
+/*
+items [0x4B] = {
+    // 0x00
+    inventory_sword,
+    inventory_sword,
+    inventory_sword,
+    inventory_sword,
+    inventory_shield,
+    inventory_shield,
+    inventory_shield,
+    inventory_fire_rod,
+
+    // 0x08
+    inventory_ice_rod,
+    inventory_hammer,
+    inventory_hookshot,
+    inventory_boow,
+    inventory_boomerang,
+    inventory_mushroom,
+    inventory_bottle,
+    inventory_bombos,
+
+    // 0x10
+    inventory_ether,
+    inventory_quake,
+    inventory_lantern,
+    inventory_flute,
+    inventory_flute,
+    inventory_red_cane,
+    inventory_bottle,
+    heart_piece,
+
+    // 0x18
+    inventory_blue_cane,
+    inventory_magic_cape,
+    inventory_magic_mirror,
+    inventory_gloves,
+    inventory_gloves,
+    inventory_book_of_mudora,
+    inventory_moon_pearl,
+
+    // 0x20
+    crystal,
+    inventory_bug_net,
+    inventory_armor,
+    inventory_armor,
+    small_key,
+    compass,
+    health,
+    bombs,
+
+    // 0x28
+    bombs,
+    inventory_magic_powder,
+    inventory_boomerang,
+    inventory_bottle,
+    inventory_bottle,
+    inventory_bottle,
+    health,
+    magic,
+
+    // 0x30
+    magic,
+    bombs,
+    big key,
+    map,
+    rupees,
+    rupees,
+    rupees,
+    pendant,
+
+    // 0x38
+    pendant,
+    pendant,
+    bow,
+    arrows,
+    arrows,
+    magic,
+    rupees,
+    rupees,
+
+    // 0x40
+    rupees,
+    rupees,
+    health,
+    arrows,
+    arrows,
+    magic,
+    rupees,
+    rupees,
+
+    // 0x48
+    inventory_bottle,
+    inventory_sword,
+    inventory_flute,
+    inventory_boots,
+}
+*/

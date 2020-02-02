@@ -63,10 +63,10 @@ AP_RAM_LIST
 #undef X
 
     printf("----- initialized ------ \n");
+    ap_emu->load("home");
     //ap_emu->load("well");
     //ap_emu->load("castle");
     //ap_emu->load("estpal");
-    ap_emu->load("home");
     //ap_emu->load("epsta");
     //ap_emu->load("prearmos");
     //ap_emu->load("cave_front");
@@ -79,6 +79,7 @@ AP_RAM_LIST
     //ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
     //ap_emu->load("blinds_house");
+    ap_emu->load("atchest");
 
     ap_plan_init();
 }
@@ -302,7 +303,7 @@ ap_ancillia_update() {
         if (*ap_ram.in_building) {
             ancillia->tl.x = ((ancillia->tl.x & ~0x1FF) << 2) | (ancillia->tl.x & 0x1FF);
             ancillia->tl.x += 0x4000;
-            if (ap_ram.ancillia_bf0[i]) {
+            if (!ap_ram.ancillia_lower_level[i]) {
                 ancillia->tl.x += 0x200;
             }
         }

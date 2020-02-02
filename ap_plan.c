@@ -1,4 +1,5 @@
 #include "ap_plan.h"
+#include "ap_item.h"
 #include "ap_map.h"
 #include "ap_snes.h"
 #include <limits.h>
@@ -231,19 +232,20 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
     struct xy link = ap_link_xy();
     bool unlockable = false;
     const struct ap_room_tag * unlock_tag = NULL;
-    if (task->node != NULL && task->node->type == NODE_TRANSITION && ap_node_islocked(task->node, &unlockable, &unlock_tag)) {
+    if (task->node != NULL && ap_node_islocked(task->node, &unlockable, &unlock_tag)) {
         if (!unlockable) {
             LOG("Cannot unlock door");
             return RC_FAIL;
         }
 
-        if (ap_door_attrs[task->node->door_type] & (DOOR_ATTR_SKEY | DOOR_ATTR_BKEY)) {
+        if (task->node->type == NODE_TRANSITION && (ap_door_attrs[task->node->door_type] & (DOOR_ATTR_SKEY | DOOR_ATTR_BKEY))) {
             // pass
-        } else if ((ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) && task->type != TASK_TRANSITION) {
+        } else if (task->node->type == NODE_TRANSITION && (ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) && task->type != TASK_TRANSITION) {
             // pass
         } else {
-            if ((ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) ||
-                (task->node->lock_node != NULL && task->node->lock_node->type == NODE_OVERLAY)) {
+            if (task->node->type == NODE_TRANSITION &&
+                ((ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) ||
+                 (task->node->lock_node != NULL && task->node->lock_node->type == NODE_OVERLAY))) {
                 // Try bombing it
                 struct ap_node * bomb_node = task->node->lock_node;
                 if (bomb_node == NULL) {
@@ -393,7 +395,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_OPEN_CHEST:
-        LOG("timeout: %d; state: %d; touching: %x; push: %x; item_recv_method: %x", task->timeout, task->state, *ap_ram.touching_chest, *ap_ram.push_timer, *ap_ram.item_recv_method);
+        LOG("timeout: %d; state: %d; touching: %x; push: %x; item_recv_method: %x; recving_item: %#x", task->timeout, task->state, *ap_ram.touching_chest, *ap_ram.push_timer, *ap_ram.item_recv_method, *ap_ram.recving_item);
         switch (task->state) {
         case 0:
             task->timeout = 64;
@@ -410,6 +412,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             if (task->state == 2) { JOYPAD_SET(A); task->state = 3; }
             else { JOYPAD_CLEAR(A); task->state = 2; }
             if (*ap_ram.item_recv_method == 1) {
+                ap_item_loc_set_raw(task->node->item_loc, *ap_ram.recving_item);
                 task->timeout = 64;
                 task->state = 4;
             }
@@ -419,7 +422,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         break;
     case TASK_TALK_NPC:
-        LOG("timeout: %d; state: %d; recving: %x; push: %x; item_recv_method: %x; link_state: %x", task->timeout, task->state, *ap_ram.recving_item, *ap_ram.push_timer, *ap_ram.item_recv_method, *ap_ram.link_state);
+        LOG("timeout: %d; state: %d; recving: %x; push: %x; item_recv_method: %x; link_state: %x; recving_item: %#x", task->timeout, task->state, *ap_ram.recving_item, *ap_ram.push_timer, *ap_ram.item_recv_method, *ap_ram.link_state, *ap_ram.recving_item);
         switch (task->state) {
         case 0:
             task->timeout = 64;
@@ -430,6 +433,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             if (*ap_ram.link_state == LINK_STATE_RECVING_ITEM || *ap_ram.link_state == LINK_STATE_RECVING_ITEM2 || *ap_ram.recving_item) {
                 // Holding item (uncle)
                 LOGB("holding item");
+                ap_item_loc_set_raw(task->node->item_loc, *ap_ram.recving_item);
                 task->timeout = 128;
                 task->state++;
             }
@@ -610,6 +614,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         }
         if (task->state == -100) {
             if (task->timeout == 1) {
+                ap_update_map_screen(true);
                 return RC_DONE;
             }
             break;
