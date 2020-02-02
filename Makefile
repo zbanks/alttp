@@ -26,7 +26,7 @@ build/%.o: %.c
 	$(CC) -MM $(CFLAGS) -MT build/$*.o $*.c > build/$*.d
 
 # Assembler, compiler, and linker flags
-override CFLAGS += $(INC) -O3 -ggdb3 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused -Wwrite-strings -std=c11 -D_DEFAULT_SOURCE #-flto
+override CFLAGS += $(INC) -O3 -ggdb3 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused -Wwrite-strings -Wshadow -std=c11 -D_DEFAULT_SOURCE #-flto
 override LFLAGS += $(LIB)
 LIBS =
 AR=gcc-ar

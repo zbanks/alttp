@@ -38,8 +38,11 @@ bool ap_manual_mode;
 #define AP_RAM_LIST \
     X(module_index,         uint8_t,   0x7E0010)   \
     X(submodule_index,      uint8_t,   0x7E0011)   \
+    X(sub_submodule_index,  uint8_t,   0x7E00B0)   \
     X(frame_counter,        uint8_t,   0x7E001A)   \
     X(in_building,          uint8_t,   0x7E001B)   \
+    X(main_screen_bitmask,  uint8_t,   0x7E001C)   \
+    X(sub_screen_bitmask,   uint8_t,   0x7E001D)   \
     X(area,                 uint8_t,   0x7E008A)   \
     X(link_x,               uint16_t,  0x7E0022)   \
     X(link_y,               uint16_t,  0x7E0020)   \
@@ -56,6 +59,7 @@ bool ap_manual_mode;
     X(dungeon_room,         uint16_t,  0x7E00A0)   \
     X(dungeon_tags,         uint16_t,  0x7E00AE)   \
     X(menu_part,            uint8_t,   0x7E00C8)   \
+    X(screen_transition,    uint8_t,   0x7E0126)   \
     X(current_item,         uint8_t,   0x7E0202)   \
     X(recving_item,         uint8_t,   0x7E02D8)   \
     X(room_state,           uint16_t,  0x7E0400)   \
@@ -111,8 +115,8 @@ bool ap_manual_mode;
     X(over_map16,           uint16_t,  0x7E2000)   \
     X(dngn_bg1_map8,        uint16_t,  0x7E2000)   \
     X(dngn_bg2_map8,        uint16_t,  0x7E4000)   \
-    X(map16_to_map8,        uint64_t,  0x078000)   \
-    X(chr_to_tattr,         uint64_t,  0x078000)   \
+ /* X(map16_to_map8,        uint64_t,  0x078000) */\
+ /* X(chr_to_tattr,         uint64_t,  0x078000) */\
     X(dngn_bg2_tattr,       uint8_t,   0x7F2000)   \
     X(dngn_bg1_tattr,       uint8_t,   0x7F3000)   \
     X(over_tattr,           uint8_t,   0x1BF110)   \
@@ -161,6 +165,17 @@ bool ap_manual_mode;
     X(dungeon_door_tilemaps,uint16_t,  0x7E19A0)   \
     X(dungeon_door_dirs,    uint16_t,  0x7E19C0)   \
     X(dungeon_chests,       uint8_t,   0x01E96C)   \
+    X(dngn_stairs_0,        uint16_t,  0x000438)   \
+    X(dngn_stairs_1,        uint16_t,  0x00047E)   \
+    X(dngn_stairs_2,        uint16_t,  0x000482)   \
+    X(dngn_stairs_3,        uint16_t,  0x0004A2)   \
+    X(dngn_stairs_4,        uint16_t,  0x0004A4)   \
+    X(dngn_stairs_5,        uint16_t,  0x00043A)   \
+    X(dngn_stairs_6,        uint16_t,  0x000480)   \
+    X(dngn_stairs_7,        uint16_t,  0x000484)   \
+    X(dngn_stairs_8,        uint16_t,  0x0004A6)   \
+    X(dngn_stairs_9,        uint16_t,  0x0004A8)   \
+    X(special_tilemaps,     uint16_t,  0x0006B0)   \
 
 extern struct ap_ram {
 #define X(name, type, offset) const type * name;
@@ -218,7 +233,8 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x23] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button 0x8000
     [0x24] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button 0x4000
     [0x25] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button XXX WILD GUESS
-    [0x26] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button XXX WILD GUESS
+    [0x26] = TILE_ATTR_NODE | TILE_ATTR_DOOR, // south stairs up
+    //[0x26] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button XXX WILD GUESS
 
     [0x27] = 0,              // fence, or hammer peg?
     [0x28] = TILE_ATTR_LDGE, // up
@@ -240,7 +256,7 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x36] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
     [0x37] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
     [0x38] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
-    [0x39] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG,
+    [0x39] = TILE_ATTR_NODE | TILE_ATTR_DOOR | TILE_ATTR_MERG, // south stairs up
 
     [0x3d] = TILE_ATTR_WALK, // in-room stairs that do not change BG
     [0x3e] = TILE_ATTR_NODE | TILE_ATTR_STRS, // in-room stairs ^-shaped
@@ -481,7 +497,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x19] = SPRITE_ATTR_ENMY, // Poe
     [0x1A] = 0, // Dwarf, Mallet, and the shrapnel from it hitting
     [0x1B] = 0, // Arrow in wall?
-    [0x1C] = SPRITE_ATTR_BLKF, // Moveable Statue
+    [0x1C] = SPRITE_ATTR_BLKS, // Moveable Statue
     [0x1D] = SPRITE_ATTR_BLKF, // Weathervane
     [0x1E] = SPRITE_ATTR_BLKF | SPRITE_ATTR_SWCH, // Crystal Switch
     [0x1F] = SPRITE_ATTR_BLKF, // Sick Kid with Bug Catching Net
@@ -580,7 +596,7 @@ static const uint16_t ap_sprite_attrs[256] = {
     [0x77] = SPRITE_ATTR_ENMY, // Also Fire Faeries (seems like a different variety)
     [0x78] = SPRITE_ATTR_BLKS, // Village Elder
     [0x79] = 0, // Good bee / normal bee
-    [0x7A] = SPRITE_ATTR_ENMY, // Agahnim
+    [0x7A] = SPRITE_ATTR_ENMY /*| SPRITE_ATTR_NVUL*/, // Agahnim
     [0x7B] = SPRITE_ATTR_ENMY, // Agahnim energy blasts (not the duds)
     [0x7C] = 0, // Boos? As in the Boos from SM3/SMW? Thats crazy talk!
     [0x7D] = 0, // 32*32 Pixel Yellow Spike Traps

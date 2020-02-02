@@ -84,6 +84,18 @@ AP_RAM_LIST
     ap_plan_init();
 }
 
+void
+ap_ram_print()
+{
+    LOG("All RAM:");
+    size_t i = 0;
+#define X(name, type, offset) \
+    printf("%24s: %#-10x", STRINGIFY(name), *ap_ram.name); \
+    if (i++ % 6 == 5) { printf("\n"); }
+AP_RAM_LIST
+#undef X
+}
+
 uint16_t
 ap_sprite_attrs_for_type(uint8_t type, uint16_t subtype, uint16_t dungeon_room)
 {

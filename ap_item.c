@@ -437,9 +437,9 @@ ap_item_init() {
         // Dungeon items (e.g. keys, map) must be in the dungeon they are for
         enum area a = item->dungeon;
         LOG("x'ing %s*%zu %zu %zu", item->name, item->copies, area_loc_start[a], area_loc_count[a]);
-        for (size_t l = 0; l < N_ITEMS; l++) {
-            if (l < area_loc_start[a] || l >= area_loc_start[a] + area_loc_count[a]) {
-                lb_mark_negative(&item_lb, item->index, l);
+        for (size_t loc = 0; loc < N_ITEMS; loc++) {
+            if (loc < area_loc_start[a] || loc >= area_loc_start[a] + area_loc_count[a]) {
+                lb_mark_negative(&item_lb, item->index, loc);
             }
         }
 
@@ -502,6 +502,7 @@ ap_item_loc_add(struct ap_node * node) {
 
 void
 ap_item_loc_set_raw(struct ap_item_loc * item_loc, uint8_t recv_item) {
+    assert(item_loc != NULL);
     assert_bp(recv_item < ARRAYLEN(recv_item_map));
     int item_type = recv_item_map[recv_item];
     return ap_item_loc_set_enum(item_loc, item_type);
@@ -509,6 +510,7 @@ ap_item_loc_set_raw(struct ap_item_loc * item_loc, uint8_t recv_item) {
 
 void
 ap_item_loc_set_enum(struct ap_item_loc * item_loc, int item_type) {
+    assert(item_loc != NULL);
     LOGB("Set item: %zu %p %d", item_loc->index, item_loc, item_type);
     assert(item_type > 0);
 

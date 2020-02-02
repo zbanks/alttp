@@ -11,7 +11,6 @@
 static struct ap_screen * map_screens[0x100 * 0x100];
 static bool map_screen_mask_x[0x100];
 static bool map_screen_mask_y[0x100];
-static size_t last_map_index = -1;
 static volatile const struct ap_screen * last_screen = NULL;
 
 static struct ap_target {
@@ -78,6 +77,41 @@ static const struct ap_script ap_scripts[] = {
         .sequence = NULL,
         .type = SCRIPT_KILLDROPS,
         .name = "HC kill miniboss free Zelda",
+    },
+    {
+        .start_tl = XY(0x4330, 0x1880),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLDROPS,
+        .name = "AgTower small key",
+    },
+    {
+        .start_tl = XY(0x4278, 0x173C),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLDROPS,
+        .name = "AgTower small key 2",
+    },
+    {
+        .start_tl = XY(0x4190, 0x0958),
+        .start_item = -1,
+        .sequence = "<<>",
+        .type = SCRIPT_SEQUENCE,
+        .name = "AgTower push statues",
+    },
+    {
+        .start_tl = XY(0x4278, 0x063C),
+        .start_item = -1,
+        .sequence = "UUUUUUBB><",
+        .type = SCRIPT_KILLALL,
+        .name = "AgTower open curtain",
+    },
+    {
+        .start_tl = XY(0x4278, 0x05C8),
+        .start_item = -1,
+        .sequence = NULL,
+        .type = SCRIPT_KILLALL,
+        .name = "AgTower boss",
     },
     {
         .start_tl = XY(0x0058, 0x0681),
@@ -425,9 +459,10 @@ ap_map_attr_from_ram(struct xy point)
     }
 }
 
-static void
+static bool
 ap_screen_refresh_cache(struct ap_screen * screen)
 {
+    bool change = false;
     for (uint16_t y = 0; y < 0x80; y++) {
         struct xy xy;
         xy.y = screen->tl.y + 8 * y;
@@ -435,9 +470,14 @@ ap_screen_refresh_cache(struct ap_screen * screen)
         for (uint16_t x = 0; x < 0x80; x++) {
             xy.x = screen->tl.x + 8 * x;
             if (xy.x > screen->br.x) break;
-            screen->attr_cache[y][x] = ap_map_attr_from_ram(xy);
+            uint16_t attr = ap_map_attr_from_ram(xy);
+            if (attr != screen->attr_cache[y][x]) {
+                screen->attr_cache[y][x] = attr;
+                change = true;
+            }
         }
     }
+    return change;
 }
 
 struct xy
@@ -951,9 +991,9 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
     struct point_state (*state)[grid.x + 2] = (void *) &buf[0x83];
 
     // Check if cache is valid
-    static struct ap_screen *last_screen = NULL;
+    static struct ap_screen *last_pf_screen = NULL;
     static uint32_t last_frame = 0;
-    if (false && last_screen == screen && last_frame == ap_frame) {
+    if (false && last_pf_screen == screen && last_frame == ap_frame) {
         for (uint16_t y = 0; y < grid.y; y++) {
             for (uint16_t x = 0; x < grid.x; x++) {
                 assert_bp(&state[y][x] == &buf[0x83 + (grid.x + 2) * y + x]);
@@ -963,7 +1003,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
             }
         }
     } else {
-        last_screen = screen;
+        last_pf_screen = screen;
         last_frame = ap_frame;
 
         for (size_t i = 0; i < 0x82 * 0x82; i++) {
@@ -1460,17 +1500,17 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
 
         // Try going to an adjacent screen
         if (node->adjacent_node != NULL && node->adjacent_direction != 0) {
-            uint64_t distance = node->pgsearch.distance + 1000;
+            uint64_t d = node->pgsearch.distance + 1000;
             if ((node->adjacent_node->pgsearch.iter == iter &&
-                 node->adjacent_node->pgsearch.distance < distance) ||
+                 node->adjacent_node->pgsearch.distance < d) ||
                  node->adjacent_node->pgsearch.iter < iter) {
                 node->adjacent_node->pgsearch = (struct ap_node_pgsearch) {
                     .iter = iter,
                     //.xy = XYMID(node->adjacent_node->tl, node->adjacent_node->br),
                     .from = node,
-                    .distance = distance,
+                    .distance = d,
                 };
-                pq_push(pq, distance, &node->adjacent_node);
+                pq_push(pq, d, &node->adjacent_node);
             }
         }
         
@@ -1493,17 +1533,17 @@ ap_pathfind_global(struct xy start_xy, struct ap_node * destination, bool commit
             if (delta_distance < 0)
                 continue;
 
-            uint64_t distance = node->pgsearch.distance + delta_distance;
+            uint64_t d = node->pgsearch.distance + delta_distance;
             if ((adj_node->pgsearch.iter == iter &&
-                 adj_node->pgsearch.distance > distance) ||
+                 adj_node->pgsearch.distance > d) ||
                  adj_node->pgsearch.iter < iter) {
                  adj_node->pgsearch = (struct ap_node_pgsearch) {
                     .iter = iter,
                     //.xy = XYMID(adj_node->tl, adj_node->br),
                     .from = node,
-                    .distance = distance,
+                    .distance = d,
                 };
-                pq_push(pq, distance, &adj_node);
+                pq_push(pq, d, &adj_node);
             }
         }
     }
@@ -1905,6 +1945,11 @@ ap_set_script(const struct ap_script * script) {
             ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(A), .joypad = SNES_MASK(A), };
             ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(A), .joypad = 0, };
             break;
+        case 'B':
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(B), .joypad = 0, };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(B), .joypad = SNES_MASK(B), };
+            ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(B), .joypad = 0, };
+            break;
         case 'Y':
             ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(Y), .joypad = 0, };
             ap_targets[i++] = (struct ap_target) { .tl = xy, .joypad_mask = SNES_MASK(Y), .joypad = SNES_MASK(Y), };
@@ -2255,13 +2300,9 @@ ap_update_map_screen(bool force)
     struct xy tl, br;
     ap_map_bounds(&tl, &br);
     size_t index = XYMAPSCREEN(tl);
-    static uint8_t last_trap_doors = 0;
-    if (index == last_map_index && last_trap_doors == *ap_ram.room_trap_doors && !force) {
-        ap_update_map_screen_nodes();
-        return NONNULL(map_screens[index]);
-    }
-    last_map_index = index;
-    last_trap_doors = *ap_ram.room_trap_doors;
+    static size_t last_map_index = -1;
+    //static uint8_t last_trap_doors = 0;
+    //last_trap_doors = *ap_ram.room_trap_doors;
     last_screen = map_screens[index];
 
     struct ap_screen * screen = map_screens[index];
@@ -2339,10 +2380,21 @@ ap_update_map_screen(bool force)
         }
         screen = map_screens[index];
     } else {
-        ap_screen_refresh_cache(screen);
+        bool needs_refresh = !(index == last_map_index && !force);
+        if (!needs_refresh && !XYINDOORS(screen->tl)) {
+            ap_update_map_screen_nodes();
+            return NONNULL(map_screens[index]);
+        }
+
+        bool cache_changed = ap_screen_refresh_cache(screen);
+        if (!cache_changed && index == last_map_index && !force) {
+            ap_update_map_screen_nodes();
+            return NONNULL(map_screens[index]);
+        }
         ap_map_add_nodes_to_screen(screen);
         ap_map_add_sprite_nodes_to_screen(screen);
     }
+    last_map_index = index;
 
     ap_map_screen_update_distances(screen);
 
@@ -2662,7 +2714,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
 
         // Overlays (Bombable Walls)
         uint16_t overlay_map16 = ap_ram.over_overlay_map16s[*ap_ram.overworld_index];
-        if (overlay_map16 != 0) {
+        if (overlay_map16 != 0 && *ap_ram.overworld_index != 0x5B) { // ignore big bomb
             new_node->overlay_index = *ap_ram.overworld_index;
             new_node->tl = ap_map16_to_xy(tl, overlay_map16);
             new_node->br = XYOP1(new_node->tl, + 15);
@@ -2775,6 +2827,9 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
             for (int i = 0; i < 4; i++) {
                 struct xy xy2 = XYOP2(xy, +, ds[i]);
                 uint8_t attr2 = ap_map_attr_from_ram(xy2);
+                if ((ap_tile_attrs[attr] & TILE_ATTR_MERG) && (ap_tile_attrs[attr2] & TILE_ATTR_MERG)) {
+                    attr2 = attr;
+                }
                 if (XYIN(xy2, tl, br) && attr2 == attr) {
                     // || ((ap_tile_attrs[attr2] & TILE_ATTR_MERG) && (ap_tile_attrs[attr] & TILE_ATTR_MERG))) {
                     new_node->tl = XYFN2(MIN, xy, xy2);
@@ -2945,7 +3000,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                             break;
                         }
                     }
-                    assert_bp(door_idx < 16);
+                    //assert_bp(door_idx < 16);
                     if (door_idx < 16) {
                         uint16_t raw_door_type = ap_ram.dungeon_door_types[door_idx];
                         uint8_t door_type = (raw_door_type & 0xFE) >> 1;
@@ -3009,6 +3064,29 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
     }
     if (XYINDOORS(tl)) {
         size_t n_doors2 = 0;
+        size_t n_stairs = (
+                *ap_ram.dngn_stairs_0 + \
+                *ap_ram.dngn_stairs_1 + \
+                *ap_ram.dngn_stairs_2 + \
+                *ap_ram.dngn_stairs_3 + \
+                *ap_ram.dngn_stairs_4 + \
+                *ap_ram.dngn_stairs_5 + \
+                *ap_ram.dngn_stairs_6 + \
+                *ap_ram.dngn_stairs_7 + \
+                *ap_ram.dngn_stairs_8 + \
+                *ap_ram.dngn_stairs_9) / 2;
+        //ap_ram_print();
+        /*
+        assert_bp(n_stairs <= 4);
+        for (size_t i = 0; i < n_stairs; i++) {
+            uint16_t stairs_tilemap = ap_ram.special_tilemaps[i];
+            assert_bp(stairs_tilemap != 0);
+            struct xy stairs_xy = ap_tilemap_to_xy(tl, stairs_tilemap);
+            if (XYIN(stairs_xy, tl, br)) {
+                n_doors2++;
+            }
+        }
+        */
         for (size_t i = 0; i < 16; i++) {
             uint16_t raw_door_type = ap_ram.dungeon_door_types[i];
             uint16_t door_tilemap = ap_ram.dungeon_door_tilemaps[i];
@@ -3041,7 +3119,8 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
                 i, raw_door_type, door_type, dir_names[door_direction],
                 PRIXYF(door_xy), door_tilemap, layer, ap_door_attr_name(door_type));
         }
-        assert_bp(n_doors == n_doors2);
+        if (n_doors != n_doors2) LOGB("%zu %zu", n_doors, n_doors2);
+        assert_bp(n_doors <= n_doors2);
 
         size_t n_chests_and_keyblocks = *ap_ram.room_keyblock_index / 2;
         size_t n_chests = *ap_ram.room_chest_index / 2;
@@ -3059,6 +3138,10 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
 
         for (size_t i = 0; i < n_chests_and_keyblocks; i++) {
             uint16_t chest_tilemap = ap_ram.room_chest_tilemaps[i];
+            if (chest_tilemap == 0) {
+                LOG("Skipping chest with tilemap 0 (%zu)", i);
+                continue;
+            }
             struct xy chest_xy = ap_tilemap_to_xy(screen->tl, chest_tilemap & 0x7FFF);
             // Undo the tilemap offset?
             chest_xy = XYOP2(chest_xy, -, XY(8, 16));
@@ -3224,7 +3307,11 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out, const struct ap_ro
                 *unlock_tag_out = NULL;
                 if (ap_door_attrs[node->door_type] & DOOR_ATTR_SKEY) {
                     assert_bp(node->screen->dungeon_id < 16);
-                    *unlockable_out = ap_ram.sram_dungeon_keys[node->screen->dungeon_id] > 0;
+                    bool available_keys = ap_ram.sram_dungeon_keys[node->screen->dungeon_id] > 0;
+                    if (*ap_ram.dungeon_id / 2 == node->screen->dungeon_id) {
+                        available_keys = available_keys || (*ap_ram.dungeon_current_keys > 0);
+                    }
+                    *unlockable_out = available_keys;
                 } else if (ap_door_attrs[node->door_type] & DOOR_ATTR_BKEY) {
                     assert_bp(node->screen->dungeon_id < 16);
                     uint16_t bit = 1 << (15 - node->screen->dungeon_id);
@@ -3235,15 +3322,16 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out, const struct ap_ro
 
                 uint16_t bit = 0;
                 switch (node->tile_attr) {
-                case 0xF8: bit = 0x8000; break; // contradictory; maybe 0x1000?
-                case 0xF0: bit = 0x8000; break; // 
-
-                case 0xF7: bit = 0x2000; break; // guess
-                case 0xF6: bit = 0x4000; break; // guess
-                case 0xF5: bit = 0x8000; break; // guess
+                case 0xF0: bit = 0x8000; break; // checked
                 case 0xF1: bit = 0x2000; break; // guess
                 case 0xF2: bit = 0x4000; break; // guess
                 case 0xF3: bit = 0x8000; break; // guess
+                case 0xF5: bit = 0x8000; break; // guess
+                case 0xF6: bit = 0x4000; break; // guess
+                case 0xF7: bit = 0x2000; break; // guess
+                case 0xF8: bit = 0x8000; break; // contradictory; maybe 0x1000?
+                case 0xF9: bit = 0x8000; break; // total guess
+                case 0xFA: bit = 0x8000; break; // total guess
                 }
                 assert_bp(bit != 0);
                 if (bit != 0) {
@@ -3296,7 +3384,7 @@ ap_node_islocked(struct ap_node * node, bool *unlockable_out, const struct ap_ro
             return true;
         }
         if (node->type == NODE_CHEST) {
-            return !(ap_tile_attrs[lock_attr] & TILE_ATTR_CHST);
+            return !(ap_tile_attrs[lock_attr] & TILE_ATTR_CHST || lock_attr == 0x27); // 0x27: opened chest
         }
         return false;
     }
@@ -3452,7 +3540,7 @@ ap_map_import(const char * filename) {
 
     for (struct xy xy = XY(0, 0); xy.y < 0x8000; xy.y += 0x100) {
         for (xy.x = 0; xy.x < 0xC000; xy.x += 0x100) {
-            struct ap_screen * screen = map_screens[XYMAPSCREEN(xy)];
+            screen = map_screens[XYMAPSCREEN(xy)];
             if (screen == NULL || !XYEQ(screen->tl, xy)) continue;
             ap_map_screen_update_distances(screen);
         }

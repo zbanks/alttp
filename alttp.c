@@ -61,7 +61,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     }
     */
     *joypad = 0;
-    INFO("citem: %#x; %#x %#x %#x", *ap_ram.current_item, *ap_ram.module_index, *ap_ram.submodule_index, *ap_ram.link_state);
+    //INFO("citem: %#x; %#x %#x %#x", *ap_ram.current_item, *ap_ram.module_index, *ap_ram.submodule_index, *ap_ram.link_state);
 
 // 0x07 In house/dungeon
 // 0x09 In OW
@@ -69,10 +69,16 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
 // 0x0E Dialog or Inventory
     uint8_t module_index = *ap_ram.module_index;
     uint8_t submodule_index = *ap_ram.submodule_index;
+    uint8_t sub_submodule_index = *ap_ram.sub_submodule_index;
     //LOG("Module: %x; Submodule: %x", module_index, submodule_index);
     //INFO("Module: %#x; Submodule: %#x; %d", module_index, submodule_index, frame);
     switch (module_index) {
     case 0x07:
+        if (submodule_index == 0x0E || sub_submodule_index != 0x00) {
+            // Inter-room transition; load in progress if sub_submodule_index != 0
+            INFO("main: %#x; sub: %#x; subsub: %#x %u", module_index, submodule_index, sub_submodule_index, frame);
+            return;
+        }
     case 0x09:
     case 0x0B:
         if (submodule_index == 0x08 || submodule_index == 0x10) {
@@ -106,6 +112,11 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     ap_map_bounds(&topleft, &bottomright);
     struct xy link = ap_link_xy();
 
+    if (ap_sprites[0].type == 0xC1 && ap_sprites[0].active && XYIN(ap_sprites[0].tl, topleft, bottomright)) {
+        INFO("Waiting for aghanim's cutscene");
+        return;
+    }
+
     ap_debug = JOYPAD_TEST(START);
     ap_map_tick();
     if (*ap_ram.link_state == LINK_STATE_HOLDING_BIG_ROCK) {
@@ -134,7 +145,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
         x = 0;
     }
 
-    INFO("citem: %#x; %#x %#x %#x", *ap_ram.current_item, *ap_ram.module_index, *ap_ram.submodule_index, *ap_ram.link_state);
+    //INFO("citem: %#x; %#x %#x %#x", *ap_ram.current_item, *ap_ram.module_index, *ap_ram.submodule_index, *ap_ram.link_state);
     //LOG("Link %d %d %u %u", *ap_ram.link_dx, *ap_ram.link_dy, *ap_ram.link_x, *ap_ram.link_y);
     //INFO("item: %#x", *ap_ram.recving_item);
 
