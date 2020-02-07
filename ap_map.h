@@ -180,7 +180,7 @@ uint32_t
 ap_path_heuristic(struct xy src, struct xy dst_tl, struct xy dst_br);
 
 int
-ap_follow_targets(uint16_t * joypad);
+ap_follow_targets(uint16_t * joypad, enum ap_inventory * equip_out);
 
 void
 ap_joypad_setdir(uint16_t * joypad, uint8_t dir);

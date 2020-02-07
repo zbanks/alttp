@@ -153,6 +153,10 @@ ap_goal_add(enum ap_goal_type type, struct ap_node * node)
             // Desert Palace
             ap_req_require(&goal->req, 0, REQUIREMENT_BOOK);
         }
+        if (strcmp(node->name, "door 0x63") == 0) {
+            // Big-bomb Fairy
+            ap_req_require(&goal->req, 0, REQUIREMENT_FIVESIX_CRYSTALS);
+        }
     }
     ap_goal_count[goal->type]++;
     return goal;
@@ -223,6 +227,24 @@ ap_print_tasks()
     printf("\n");
 }
 
+static int
+ap_task_follow_targets(struct ap_task * task, uint16_t * joypad)
+{
+    enum ap_inventory equip = *ap_ram.current_item;
+    int rc = ap_follow_targets(joypad, &equip);
+    if (rc != RC_INPR) return rc;
+    if (equip != *ap_ram.current_item) {
+        struct ap_task * new_task = ap_task_prepend(); 
+        new_task->type = TASK_SET_INVENTORY;
+        new_task->item = equip;
+        snprintf(new_task->name, sizeof new_task->name, "equip to follow_targets");
+
+        task->state = 0;
+        task->timeout = 1;
+    }
+    return rc;
+}
+
 // return -1 for failure, 0 for success, 1 for in-progress
 static int
 ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
@@ -245,7 +267,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         } else {
             if (task->node->type == NODE_TRANSITION &&
                 ((ap_door_attrs[task->node->door_type] & DOOR_ATTR_BOMB) ||
-                 (task->node->lock_node != NULL && task->node->lock_node->type == NODE_OVERLAY))) {
+                 (task->node->lock_node != NULL && task->node->lock_node->type == NODE_OVERLAY && task->node->lock_node->overlay_index != 0x5B))) {
                 // Try bombing it
                 struct ap_node * bomb_node = task->node->lock_node;
                 if (bomb_node == NULL) {
@@ -380,17 +402,21 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->state++;
         case 1:
         case 2:
+            /*
             if (task->state == 2) {
                 JOYPAD_CLEAR(A);
                 task->state = 1;
             } else if (*ap_ram.push_timer != 0x20) {
+                // TODO: Need a way of peaking ahead here to see if we need to use hammer
+                // then we can insert a TASK_SET_INVENTORY
                 JOYPAD_SET(A);
                 task->state = 2;
             } else if (*ap_ram.carrying_bit7) {
                 JOYPAD_SET(A);
                 task->state = 2;
             }
-            rc = ap_follow_targets(joypad);
+            */
+            rc = ap_task_follow_targets(task, joypad);
             if (rc != RC_INPR) return rc;
         }
         break;
@@ -464,7 +490,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
         case 2:
             if (task->state == 1) { JOYPAD_SET(A); task->state = 2; }
             else { JOYPAD_CLEAR(A); task->state = 1; }
-            rc = ap_follow_targets(joypad);
+            rc = ap_task_follow_targets(task, joypad);
             if (rc != RC_INPR) return rc;
         }
         break;
@@ -602,7 +628,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             task->timeout = rc + 32;
             task->state++;
         case 1:
-            rc = ap_follow_targets(joypad);
+            rc = ap_task_follow_targets(task, joypad);
             if (rc != RC_INPR) return rc;
         }
         break;
@@ -683,7 +709,7 @@ ap_task_evaluate(struct ap_task * task, uint16_t * joypad)
             LOG("timeout");
             return RC_FAIL;
         }
-        rc = ap_follow_targets(joypad);
+        rc = ap_task_follow_targets(task, joypad);
         if (rc == RC_FAIL) {
             LOG("ap_follow_targets failed");
             return RC_FAIL;

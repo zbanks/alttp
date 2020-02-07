@@ -22,6 +22,7 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     *(uint8_t *) (uintptr_t) ap_ram.health_current = *ap_ram.health_capacity;
     *(uint8_t *) (uintptr_t) ap_ram.inventory_bombs = 10;
     *(uint8_t *) (uintptr_t) ap_ram.inventory_quiver = 10;
+    *(uint8_t *) (uintptr_t) ap_ram.inventory_hammer = 1;
     //*(uint8_t *) (uintptr_t) ap_ram.inventory_gloves = 1;
     *(uint8_t *) (uintptr_t) &ap_ram.inventory_base[INVENTORY_LAMP] = 1;
 
@@ -83,7 +84,8 @@ ap_tick(uint32_t frame, uint16_t * joypad) {
     case 0x0B:
         if (submodule_index == 0x08 || submodule_index == 0x10) {
             // Stairs; keep following targets (even though we can't change direction);
-            ap_follow_targets(joypad);
+            enum ap_inventory equip = *ap_ram.current_item;
+            ap_follow_targets(joypad, &equip);
         }
         if (submodule_index != 0x00) {
             return;

@@ -79,7 +79,9 @@ AP_RAM_LIST
     //ap_emu->load("basement");
     //ap_emu->load("dam_puzzle");
     //ap_emu->load("blinds_house");
-    ap_emu->load("atchest");
+    //ap_emu->load("atchest");
+    //ap_emu->load("pyramid");
+    ap_emu->load("hpegs");
 
     ap_plan_init();
 }

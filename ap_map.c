@@ -100,10 +100,10 @@ static const struct ap_script ap_scripts[] = {
         .name = "AgTower push statues",
     },
     {
-        .start_tl = XY(0x4278, 0x063C),
+        .start_tl = XY(0x4278, 0x063D),
         .start_item = -1,
-        .sequence = "UUUUUUBB><",
-        .type = SCRIPT_KILLALL,
+        .sequence = "UB><",
+        .type = SCRIPT_SEQUENCE,
         .name = "AgTower open curtain",
     },
     {
@@ -273,6 +273,8 @@ ap_link_xy()
         if (!*ap_ram.link_lower_level) {
             link.x += 0x200;
         }
+    } else if (*ap_ram.overworld_dark) {
+        link.y += 0x1000;
     }
     return link;
 }
@@ -313,6 +315,10 @@ ap_map_bounds(struct xy * topleft, struct xy * bottomright)
         topleft->y = (uint16_t) (*ap_ram.map_y_offset);
         bottomright->x = (uint16_t) (topleft->x + ((*ap_ram.map_x_mask * 8) | 0xF));
         bottomright->y = (uint16_t) (topleft->y + (*ap_ram.map_y_mask | 0xF));
+        if (*ap_ram.overworld_dark) {
+            topleft->y += 0x1000;
+            bottomright->y += 0x1000;
+        }
     }
 }
 
@@ -359,7 +365,7 @@ ap_map_attr_from_ram(struct xy point)
 #define LOAD2(x) (*(uint16_t *)ap_emu->base((x) ))
         //uint16_t six = ((point.y - LOAD(0x708)) & LOAD(0x70A)) << 3;
         //uint16_t x = (((point.x/8) - LOAD(0x70C)) & LOAD(0x70E)) | six;
-        uint16_t a, x, m06;
+        uint16_t a, x, m06, tile;
 
 //CODE_008830:        A5 00         LDA $00                   ;
         a = point.y;
@@ -386,7 +392,7 @@ ap_map_attr_from_ram(struct xy point)
 //CODE_008849:        AA            TAX                       ;
         x = a;
 //CODE_00884A:        BF 00 20 7E   LDA $7E2000,x             ;
-        a = LOAD2(0x7E2000 + x);
+        a = tile = LOAD2(0x7E2000 + x);
 //CODE_00884E:        0A            ASL A                     ;
 //CODE_00884F:        0A            ASL A                     ;
         a <<= 2;
@@ -427,21 +433,30 @@ ap_map_attr_from_ram(struct xy point)
 //CODE_008876:        90 0F         BCC CODE_008887           ;
 //CODE_008878:        C9 1C         CMP #$1C                  ;
 //CODE_00887A:        B0 0B         BCS CODE_008887           ;
-        if (a < 0x10 || a >= 0x1C) return a;
+        //if (a < 0x10 || a >= 0x1C) return a;
+        if (a >= 0x10 && a < 0x1C) {
 //CODE_00887C:        85 06         STA $06                   ;
-        m06 = (m06 & 0xFF00) | (a & 0xFF);
+            m06 = (m06 & 0xFF00) | (a & 0xFF);
 //CODE_00887E:        A5 07         LDA $07                   ;
-        a = (m06 & 0xFF) >> 8;
+            a = (m06 & 0xFF) >> 8;
 //CODE_008880:        29 40         AND #$40                  ;
-        a &= 0x40;
+            a &= 0x40;
 //CODE_008882:        0A            ASL A                     ;
 //CODE_008883:        2A            ROL A                     ;
 //CODE_008884:        2A            ROL A                     ;
-        a <<= 3;
-        a = (a & 0xF8) | ((a >> 8) & 0x7); // XXX is this right w/ carry?
+            a <<= 3;
+            a = (a & 0xF8) | ((a >> 8) & 0x7); // XXX is this right w/ carry?
 //CODE_008885:        05 06         ORA $06                   ;
-        a |= m06 & 0xFF;
+            a |= m06 & 0xFF;
 //CODE_008887:        6B            RTL                       ;
+        }
+        //return a;
+
+        // Patch: make 0x27 always mean a hammerable peg; fences etc turned to 0x01
+        if (a == 0x27 && tile != 0x021B) {
+            return 0x01;
+        }
+
         return a;
 
 /*
@@ -544,6 +559,7 @@ ap_print_map_screen(struct ap_screen * screen)
     uint16_t lift_mask = TILE_ATTR_LFT0;
     if (*ap_ram.inventory_gloves >= 1) lift_mask |= TILE_ATTR_LFT1;
     if (*ap_ram.inventory_gloves >= 2) lift_mask |= TILE_ATTR_LFT2;
+    if (*ap_ram.inventory_hammer >= 1) lift_mask |= TILE_ATTR_HMMR;
 
     uint16_t semi_tile_attrs = lift_mask | TILE_ATTR_DOOR;
     bool inside = XYINDOORS(screen->tl);
@@ -674,7 +690,7 @@ ap_set_targets(size_t count)
 }
 
 int
-ap_follow_targets(uint16_t * joypad)
+ap_follow_targets(uint16_t * joypad, enum ap_inventory * equip_out)
 {
     static struct xy last_link = XY(0, 0);
     static int stationary_link_count = 0;
@@ -773,16 +789,45 @@ ap_follow_targets(uint16_t * joypad)
     //LOG("L:" PRIXY "; %zu:" PRIXY "; %d", PRIXYF(link), ap_target_count, PRIXYF(ap_targets[ap_target_count-1]), ap_target_timeout);
 
     const uint16_t dir_mask = SNES_MASK(UP) | SNES_MASK(DOWN) | SNES_MASK(LEFT) | SNES_MASK(RIGHT);
+    struct xy next_xy = target.tl;
     if ((joypad_mask & dir_mask) == 0) {
-        if (link.x > target.tl.x)
+        if (link.x > target.tl.x) {
             JOYPAD_SET(LEFT);
-        else if (link.x < target.tl.x)
+        } else if (link.x < target.tl.x) {
             JOYPAD_SET(RIGHT);
-        if (link.y > target.tl.y)
+            next_xy.x += 8;
+        }
+        if (link.y > target.tl.y) {
             JOYPAD_SET(UP);
-        else if (link.y < target.tl.y)
+        } else if (link.y < target.tl.y) {
             JOYPAD_SET(DOWN);
+            next_xy.y += 8;
+        }
     }
+
+    uint16_t lift_mask = TILE_ATTR_LFT0;
+    if (*ap_ram.inventory_gloves >= 1) lift_mask |= TILE_ATTR_LFT1;
+    if (*ap_ram.inventory_gloves >= 2) lift_mask |= TILE_ATTR_LFT2;
+
+    uint8_t tile = ap_map_attr(next_xy);
+    if (tile == 0x50 && *ap_ram.inventory_sword > 0) {
+        JOYPAD_MASH(B, 0x04); // Sword
+    } else if ((ap_tile_attrs[tile] & lift_mask) && *ap_ram.push_timer != 0x20) {
+        JOYPAD_MASH(A, 0x01); // Lift
+    } else if (*ap_ram.carrying_bit7) {
+        JOYPAD_MASH(A, 0x01);
+    } else if ((ap_tile_attrs[tile] & TILE_ATTR_HMMR) && *ap_ram.inventory_hammer != 0) {
+        if (*equip_out == INVENTORY_HAMMER) {
+            JOYPAD_MASH(Y, 0x1);
+        }
+        *equip_out = INVENTORY_HAMMER;
+    } else {
+        JOYPAD_CLEAR(A);
+        JOYPAD_CLEAR(B);
+        JOYPAD_CLEAR(Y);
+    }
+
+
     /*
     uint8_t dir = 0;
     if (link.x > target.x) {
@@ -848,7 +893,7 @@ ap_follow_targets(uint16_t * joypad)
                 }
                 if ((ap_sprites[i].attrs & SPRITE_ATTR_ENMY) && !(ap_sprites[i].attrs & SPRITE_ATTR_NVUL)) {
                     if (XYL1BOXDIST(link_sword_up, ap_sprites[i].tl, ap_sprites[i].br) <= 8) {
-                        JOYPAD_MASH(B, 0x10); // Sword
+                        JOYPAD_MASH(B, 0x08); // Sword
                         break;
                     }
                 }
@@ -966,6 +1011,7 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
     uint16_t lift_mask = TILE_ATTR_LFT0;
     if (*ap_ram.inventory_gloves >= 1) lift_mask |= TILE_ATTR_LFT1;
     if (*ap_ram.inventory_gloves >= 2) lift_mask |= TILE_ATTR_LFT2;
+    if (*ap_ram.inventory_hammer >= 1) lift_mask |= TILE_ATTR_HMMR;
 
     static struct point_state buf[0x82 * 0x82]; 
 
@@ -1201,6 +1247,24 @@ ap_pathfind_local(struct ap_screen * screen, struct xy start_xy, struct xy desti
     }
     if (save_local_state || commit) {
         ap_print_pathfind_local_state(buf, grid);
+    }
+
+    // Hack to nudge starting poing if we are "trapped" (probably inside a sprite)
+    if (state[src.y][src.x].cost >= (1 << 20)) {
+        const uint32_t min_cost = state[src.y][src.x].cost;
+        if (state[src.y-2][src.x-2].cost < min_cost) {
+            src.x += -2;
+            src.y += -2;
+        } else if (state[src.y+2][src.x-2].cost < min_cost) {
+            src.x += -2;
+            src.y += +2;
+        } else if (state[src.y-2][src.x+2].cost < min_cost) {
+            src.x += +2;
+            src.y += -2;
+        } else if (state[src.y+2][src.x+2].cost < min_cost) {
+            src.x += +2;
+            src.y += +2;
+        }
     }
 
     static struct pq * pq = NULL;
@@ -2694,7 +2758,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
 
             struct xy original_xy = ap_map16_to_xy(tl, ap_ram.over_ent_map16s[i]);
             new_node->tl = ap_map16_to_xy(tl, ap_ram.over_ent_map16s[i]);
-            if (id == 0x3c) {
+            if (id == 0x3c || id == 0x26 || id == 0x68) {
                 // Door in a log is oddly placed
                 new_node->tl.x -= 0x08;
             }
@@ -2714,7 +2778,7 @@ ap_map_add_nodes_to_screen(struct ap_screen * screen) {
 
         // Overlays (Bombable Walls)
         uint16_t overlay_map16 = ap_ram.over_overlay_map16s[*ap_ram.overworld_index];
-        if (overlay_map16 != 0 && *ap_ram.overworld_index != 0x5B) { // ignore big bomb
+        if (overlay_map16 != 0) {
             new_node->overlay_index = *ap_ram.overworld_index;
             new_node->tl = ap_map16_to_xy(tl, overlay_map16);
             new_node->br = XYOP1(new_node->tl, + 15);

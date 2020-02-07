@@ -3,18 +3,18 @@
 #include "ap_math.h"
 #include "alttp_public.h"
 
-#define SNES_TR_MASK		((uint16_t) (1ul <<  4))
-#define SNES_TL_MASK		((uint16_t) (1ul <<  5))
-#define SNES_X_MASK			((uint16_t) (1ul <<  6))
-#define SNES_A_MASK			((uint16_t) (1ul <<  7))
-#define SNES_RIGHT_MASK		((uint16_t) (1ul <<  8))
-#define SNES_LEFT_MASK		((uint16_t) (1ul <<  9))
-#define SNES_DOWN_MASK		((uint16_t) (1ul << 10))
-#define SNES_UP_MASK		((uint16_t) (1ul << 11))
-#define SNES_START_MASK		((uint16_t) (1ul << 12))
-#define SNES_SELECT_MASK	((uint16_t) (1ul << 13))
-#define SNES_Y_MASK			((uint16_t) (1ul << 14))
-#define SNES_B_MASK			((uint16_t) (1ul << 15))
+#define SNES_TR_MASK        ((uint16_t) (1ul <<  4))
+#define SNES_TL_MASK        ((uint16_t) (1ul <<  5))
+#define SNES_X_MASK         ((uint16_t) (1ul <<  6))
+#define SNES_A_MASK         ((uint16_t) (1ul <<  7))
+#define SNES_RIGHT_MASK     ((uint16_t) (1ul <<  8))
+#define SNES_LEFT_MASK      ((uint16_t) (1ul <<  9))
+#define SNES_DOWN_MASK      ((uint16_t) (1ul << 10))
+#define SNES_UP_MASK        ((uint16_t) (1ul << 11))
+#define SNES_START_MASK     ((uint16_t) (1ul << 12))
+#define SNES_SELECT_MASK    ((uint16_t) (1ul << 13))
+#define SNES_Y_MASK         ((uint16_t) (1ul << 14))
+#define SNES_B_MASK         ((uint16_t) (1ul << 15))
 
 #define SNES_MASK(key) CONCAT(CONCAT(SNES_, key), _MASK)
 
@@ -56,6 +56,7 @@ bool ap_manual_mode;
     X(link_lower_level,     uint8_t,   0x7E00EE)   \
     X(link_on_switch,       uint16_t,  0x7E0430)   \
     X(overworld_index,      uint16_t,  0x7E008A)   \
+    X(overworld_dark,       uint8_t,   0x7E0FFF)   \
     X(dungeon_room,         uint16_t,  0x7E00A0)   \
     X(dungeon_tags,         uint16_t,  0x7E00AE)   \
     X(menu_part,            uint8_t,   0x7E00C8)   \
@@ -153,6 +154,7 @@ bool ap_manual_mode;
     X(sram_tagalong,        uint8_t,   0x7EF3CC)   \
     X(inventory_base,       uint8_t,   0x7EF33F)   \
     X(inventory_bombs,      uint8_t,   0x7EF343)   \
+    X(inventory_hammer,     uint8_t,   0x7EF34B)   \
     X(inventory_gloves,     uint8_t,   0x7EF354)   \
     X(inventory_sword,      uint8_t,   0x7EF359)   \
     X(inventory_quiver,     uint8_t,   0x7EF377)   \
@@ -200,6 +202,7 @@ extern struct ap_snes9x * ap_emu;
     X(STRS) /* Dungeon Stairs */ \
     X(MERG) /* Merge with similar tiles */ \
     X(EDGE) /* Pits have weird collision; only check top edge */ \
+    X(HMMR) /* Hammer pegs */ \
 
 enum {
 #define X(d) CONCAT(_TILE_ATTR_INDEX_, d),
@@ -236,7 +239,7 @@ static const uint16_t ap_tile_attrs[256] = {
     [0x26] = TILE_ATTR_NODE | TILE_ATTR_DOOR, // south stairs up
     //[0x26] = TILE_ATTR_WALK | TILE_ATTR_NODE | TILE_ATTR_SWCH, // button XXX WILD GUESS
 
-    [0x27] = 0,              // fence, or hammer peg?
+    [0x27] = TILE_ATTR_HMMR, // hammer peg (was also fence; remapped to 0x01)
     [0x28] = TILE_ATTR_LDGE, // up
     [0x29] = TILE_ATTR_LDGE, // down
     [0x2a] = TILE_ATTR_LDGE, // left
@@ -1081,101 +1084,3 @@ DUNGEON_LIST
 
 extern const char * const ap_dungeon_names[];
 extern const char * const ap_dungeon_abbrs[];
-/*
-items [0x4B] = {
-    // 0x00
-    inventory_sword,
-    inventory_sword,
-    inventory_sword,
-    inventory_sword,
-    inventory_shield,
-    inventory_shield,
-    inventory_shield,
-    inventory_fire_rod,
-
-    // 0x08
-    inventory_ice_rod,
-    inventory_hammer,
-    inventory_hookshot,
-    inventory_boow,
-    inventory_boomerang,
-    inventory_mushroom,
-    inventory_bottle,
-    inventory_bombos,
-
-    // 0x10
-    inventory_ether,
-    inventory_quake,
-    inventory_lantern,
-    inventory_flute,
-    inventory_flute,
-    inventory_red_cane,
-    inventory_bottle,
-    heart_piece,
-
-    // 0x18
-    inventory_blue_cane,
-    inventory_magic_cape,
-    inventory_magic_mirror,
-    inventory_gloves,
-    inventory_gloves,
-    inventory_book_of_mudora,
-    inventory_moon_pearl,
-
-    // 0x20
-    crystal,
-    inventory_bug_net,
-    inventory_armor,
-    inventory_armor,
-    small_key,
-    compass,
-    health,
-    bombs,
-
-    // 0x28
-    bombs,
-    inventory_magic_powder,
-    inventory_boomerang,
-    inventory_bottle,
-    inventory_bottle,
-    inventory_bottle,
-    health,
-    magic,
-
-    // 0x30
-    magic,
-    bombs,
-    big key,
-    map,
-    rupees,
-    rupees,
-    rupees,
-    pendant,
-
-    // 0x38
-    pendant,
-    pendant,
-    bow,
-    arrows,
-    arrows,
-    magic,
-    rupees,
-    rupees,
-
-    // 0x40
-    rupees,
-    rupees,
-    health,
-    arrows,
-    arrows,
-    magic,
-    rupees,
-    rupees,
-
-    // 0x48
-    inventory_bottle,
-    inventory_sword,
-    inventory_flute,
-    inventory_boots,
-}
-*/
